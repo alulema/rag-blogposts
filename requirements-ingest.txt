@@ -1,0 +1,13 @@
+# Ingesta build-time (fetch → clean → chunk → embed → dump.sql). Python 3.13.
+# Corre en CI / NUC, no en el runtime del demo.
+
+# Fetch de posts públicos
+requests>=2.32
+
+# Limpieza / extracción de contenido HTML
+beautifulsoup4>=4.12
+lxml>=5.2
+
+# Embeddings (mismo modelo que la app). Trae torch (CPU) + tokenizer HF para contar tokens.
+sentence-transformers>=3.0
+numpy>=1.26
