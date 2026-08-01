@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Env / secrets (repo PUBLIC — never commit secrets or real .env)
+.env
+.env.*
+!.env.example
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Notes:
+# - db/dump.sql is a BAKED artifact (committed by refresh-corpus.yml) → NOT ignored.
+# - Model blobs (Qwen / embeddings) are baked at image build-time, never committed here.

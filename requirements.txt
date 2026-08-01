@@ -1,0 +1,18 @@
+# App runtime (FastAPI + RAG). Python 3.13.
+# Pins conservadores (lower bounds); se congelará un lockfile en Fase 4/5 para imágenes reproducibles.
+
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+pydantic-settings>=2.3
+
+# Cliente Ollama (streaming) por HTTP
+httpx>=0.27
+
+# Vector store: Postgres + pgvector
+psycopg[binary]>=3.2
+pgvector>=0.3
+
+# Embeddings multilingües (query-time). Trae torch (CPU).
+sentence-transformers>=3.0
+numpy>=1.26

@@ -1,0 +1,25 @@
+[project]
+name = "rag-blogposts"
+version = "0.0.0"
+description = "RAG chatbot grounded on alexisalulema.com blog posts (ephemeral demo)."
+readme = "README.md"
+requires-python = ">=3.13"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+# *.md excluido: no formatear/lint de bloques de código embebidos en docs
+# (DEMO_INTEGRATION.md es el contrato copiado de infra — no se modifica).
+extend-exclude = [".venv", "db", "*.md"]
+
+[tool.ruff.lint]
+# E/F: pycodestyle+pyflakes · I: isort · UP: pyupgrade · B: bugbear · SIM: simplify
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "ingest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["."]
