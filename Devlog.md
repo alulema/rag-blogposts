@@ -52,3 +52,84 @@ Bitácora del proyecto: actividades, decisiones, desafíos y avances. Se actuali
 - **Fase 1 — Ingesta:** `sitemap-index.xml` → `sitemap-0.xml` (confirmado: un solo sub-sitemap) →
   filtrar `/blog/*` y `/es/blog/*` → limpiar HTML → chunk + embed → `db/dump.sql` de muestra.
   Validar calidad de chunks/metadata.
+
+---
+
+## 2026-07-31 — Fase 1 (ingesta: pipeline + validación de muestra)
+
+### Hecho
+- Pipeline modular en `ingest/`: `fetch` (sitemap → URLs → HTML), `clean` (extracción del contenido
+  Astro), `tokens` (contador: tokenizer del modelo o heurística), `chunk` (sentence-aware ~600 tokens,
+  solape ~80), `embed` (mean-pool de sub-ventanas; NUC), `dump` (`dump.sql` + `snapshot.jsonl`),
+  `run` (CLI con `--dry-run`, `--limit`, `--langs`).
+- `db/schema.sql`: tabla `chunks (url, title, lang, published, chunk_index, content, embedding vector(384))`
+  + índice **HNSW cosine** (se crea tras los INSERT en el dump).
+- Tests (**22 total**): fetch (filtro de sitemap), clean (metadata + remoción de ToC/iconos/KaTeX/nbsp +
+  código preservado), chunk (solape, código entero, propagación de metadata), dump (schema/escape/vector
+  literal/HNSW/snapshot), embed (windowing).
+
+### Hallazgos / desafíos resueltos (sobre datos reales)
+- Sitio **Astro**: contenido en `.post-content`; `.post-header`/`.post-footer` son meta/navegación.
+  Corpus **~34 posts** (~28 EN + ~6 ES) desde un único `sitemap-0.xml`.
+- **Ligaduras de iconos** (Material Symbols, p.ej. `beenhere`) y **Table of Contents** (heading + lista
+  de anclas `#`) → removidos del cuerpo.
+- **Mojibake**: `requests` adivinaba Latin-1 → se **fuerza UTF-8** en el fetch; `&nbsp;`/zero-width/BOM
+  normalizados.
+- **KaTeX duplicaba** el texto de las fórmulas (MathML + anotación LaTeX + visual) → se elimina
+  `.katex-mathml` y se conserva la visual (`.katex-html`).
+- **Decisión — cap de ~128 tokens de MiniLM:** se mantienen chunks ~600 (CLAUDE.md) y el vector
+  representa el **chunk completo** vía mean-pooling de sub-ventanas ≤128 tokens (evita pérdida de recall
+  por truncado). En `ingest/embed.py`.
+
+### Validación
+- `ruff` + `pytest`: OK (22 tests).
+- **Dry-run real** (`python -m ingest.run --dry-run`, heurística de tokens): 4 EN + 6 ES; 4–21 chunks
+  por post; tamaños ~570 tokens (mediana); sin `beenhere`/ToC; código, acentos y metadata (title/lang/
+  date) correctos.
+
+### Pendiente (en NUC/CI, requiere torch)
+- Run real con embeddings → `db/dump.sql` + `db/snapshot.jsonl` (corpus completo): `python -m ingest.run`.
+  No se ejecuta en la máquina de autoría por el split de entorno acordado.
+
+### Siguiente
+- **Fase 2 — App + RAG core:** init pgvector, retrieval top-k (cosine + umbral grounded), armado de
+  prompt, cliente Ollama en streaming, endpoint `POST /chat` SSE. Prueba por consola/SSE en el NUC.
+
+---
+
+## 2026-08-02 — Fase 2 (App + RAG core, sin UI)
+
+### Hecho
+- `app/embeddings.py`: `Embedder` (query → 384-d normalizado; `sentence-transformers` lazy).
+- `app/retrieval.py`: `Retriever` sobre pool inyectado; **top-k coseno** (`<=>`, vector como literal
+  `::vector`) + **umbral grounded**; dataclass `RetrievedChunk`.
+- `app/rag.py`: system prompt grounded (cita fuentes + responde en el idioma de la pregunta +
+  rehúsa fuera de corpus), `build_messages` (system+contexto+historial+pregunta), `citations`
+  (dedupe por URL), `detect_lang`, `refusal_message`.
+- `app/ollama_client.py`: `OllamaClient.stream_chat` (async httpx, `/api/chat`, relay token a token).
+- `app/main.py`: FastAPI + lifespan (pool psycopg + Embedder + ensure schema/índice HNSW);
+  `POST /chat` → **SSE** (`sources` → `token`* → `done`; `error` si Ollama falla); `/` placeholder;
+  `/healthz`. Sin auth/TLS (gateway). **Grounded-only:** sin contexto no llama al LLM y rehúsa en
+  el idioma detectado.
+- `requirements.txt`: `psycopg[binary,pool]` (quitado `pgvector`; vectores como literal).
+
+### Decisiones
+- **Vectores como literal `::vector`** (sin adaptador pgvector en Python) → menos dependencias.
+- **Inyección de dependencias** (retriever/ollama vía `Depends` + `Annotated`) → endpoint testeable
+  con TestClient **sin** ejecutar el lifespan (sin torch/psycopg/Ollama).
+- **Umbral grounded**: si nada supera `SIMILARITY_THRESHOLD`, rehúso *canned* (sin LLM) en el idioma.
+
+### Validación
+- ruff + **34 tests** (rag, retrieval, api). SSE validado con TestClient + retriever/ollama falsos
+  (orden `sources/token/done`, rehúso grounded, 400 si el último msg no es `user`, health/placeholder).
+- App **importable sin torch/psycopg** (imports pesados lazy) — confirmado por los tests.
+
+### Pendiente (NUC: Postgres+pgvector sembrado + Ollama con Qwen)
+- e2e por consola/curl: `uvicorn app.main:app --host 0.0.0.0 --port 8080` →
+  `curl -N -X POST localhost:8080/chat -H 'content-type: application/json'
+  -d '{"messages":[{"role":"user","content":"What are activation functions?"}]}'`
+- Calibrar `SIMILARITY_THRESHOLD` (0.30 es placeholder) con datos reales.
+
+### Siguiente
+- **Fase 3 — UI de chat en `/`**: single-page vanilla, SSE con `fetch()`+`ReadableStream`,
+  tema del sitio en vivo (`demo-theme.css`), citas y rehúso grounded.
