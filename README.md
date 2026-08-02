@@ -40,7 +40,8 @@ Un Container App con **3 contenedores** que comparten `localhost`:
 docker compose up -d --build      # → http://localhost:8080
 
 # Ingesta local (genera db/dump.sql) — Fase 1+
-python ingest/run.py
+python -m ingest.run              # run real (embeddings; requiere torch)
+python -m ingest.run --dry-run --limit 3   # sin torch: valida fetch/clean/chunk
 
 # Lint + tests (autoría)
 ruff check . && ruff format --check .
