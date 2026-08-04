@@ -33,22 +33,65 @@ Un Container App con **3 contenedores** que comparten `localhost`:
 - **Autoría de código:** máquina Windows (con el asistente).
 - **Docker / Ollama / Postgres / e2e:** NUC Ubuntu (64 GB RAM).
 
-### Comandos (se irán completando por fase)
+> **Aislamiento:** en local usa un **venv** (no el Python del sistema/conda). En el contenedor
+> del demo (Fase 4) se instala en el Python del sistema — ahí el contenedor **es** el sandbox.
+
+### Lint + tests (autoría)
 
 ```bash
-# Local e2e (en la NUC) — Fase 4+
-docker compose up -d --build      # → http://localhost:8080
-
-# Ingesta local (genera db/dump.sql) — Fase 1+
-python -m ingest.run              # run real (embeddings; requiere torch)
-python -m ingest.run --dry-run --limit 3   # sin torch: valida fetch/clean/chunk
-
-# Lint + tests (autoría)
+python -m venv .venv && .\.venv\Scripts\activate   # Windows (Linux/mac: source .venv/bin/activate)
+pip install -r requirements.txt
+pip install ruff pytest                             # herramientas de dev
 ruff check . && ruff format --check .
 pytest
 ```
 
+### Ejecución y pruebas e2e (local, en la NUC)
+
+Requiere Docker + Ollama. Los defaults de `app/config.py`
+(`DB_DSN=postgresql://rag:rag@localhost:5432/rag`, `OLLAMA_HOST=http://localhost:11434`,
+`LLM_MODEL=qwen2.5:1.5b-instruct`) coinciden con estos comandos, así que **no hay que tocar env**.
+
+```bash
+# 0) venv + deps (desde la raíz del repo)
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt                 # app (FastAPI + torch para embed de la query)
+
+# 1) Corpus → db/dump.sql (si aún no existe)
+pip install -r requirements-ingest.txt          # deps de ingesta (requests, bs4, lxml, …)
+python -m ingest.run                            # genera db/dump.sql + db/snapshot.jsonl
+#   python -m ingest.run --dry-run --limit 3    # chequeo rápido sin embeddings
+
+# 2) Postgres + pgvector (Docker) y sembrado del corpus
+docker run -d --name rag-pg \
+  -e POSTGRES_USER=rag -e POSTGRES_PASSWORD=rag -e POSTGRES_DB=rag \
+  -p 5432:5432 pgvector/pgvector:pg16
+docker exec -i rag-pg psql -U rag -d rag < db/dump.sql
+docker exec -it rag-pg psql -U rag -d rag -c "SELECT count(*) FROM chunks;"
+#   tras un reboot: docker start rag-pg   (NO repetir docker run)
+
+# 3) Ollama + modelo (nativo o en Docker). Debe escuchar en localhost:11434
+ollama pull qwen2.5:1.5b-instruct
+
+# 4) App (ingress interno, sin TLS/auth — los pone el gateway en prod)
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8080
+
+# 5) Probar el endpoint SSE (otra terminal)
+curl -N -X POST localhost:8080/chat -H 'content-type: application/json' \
+  -d '{"messages":[{"role":"user","content":"What are activation functions?"}]}'
+#   respuesta esperada: event: sources (citas) → event: token* → event: done
+```
+
+Health check: `curl localhost:8080/healthz` → `{"status":"ok"}`.
+
+### Local e2e con contenedores (Fase 4+)
+
+```bash
+docker compose up -d --build      # app + ollama + db juntos → http://localhost:8080
+```
+
 ## Estado
 
-En construcción por fases (ver `Devlog.md`): **Fase 0 (scaffold)** ✅ · Ingesta → App+RAG → UI →
-Contenedores/e2e → CI → Hand-off.
+En construcción por fases (ver `Devlog.md`): **Fase 0 (scaffold)** ✅ · **Fase 1 (ingesta)** ✅ ·
+**Fase 2 (app + RAG core)** ✅ — *primer e2e verde en la NUC* · Fase 3 (UI) → Contenedores/e2e →
+CI → Hand-off.
