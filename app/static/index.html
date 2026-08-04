@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAG · Blog de Alexis Alulema</title>
+    <meta
+      name="description"
+      content="Chatbot RAG grounded sobre los posts del blog de alexisalulema.com, con citas."
+    />
+    <!-- Tema del sitio EN VIVO: adopta el branding automáticamente (no hardcodear paleta). -->
+    <link rel="stylesheet" href="https://alexisalulema.com/demo-theme.css" />
+    <!-- Estilos del demo (usan var(--token, fallback) → degradan si el tema no carga). -->
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="dot" aria-hidden="true"></span>
+          <div class="brand-text">
+            <h1>RAG · Blog de Alexis Alulema</h1>
+            <p class="subtitle">
+              Respuestas fundamentadas en los posts, con fuentes ·
+              Grounded, cited answers from the blog
+            </p>
+          </div>
+        </div>
+        <button
+          id="theme-toggle"
+          class="icon-btn"
+          type="button"
+          aria-label="Cambiar tema claro/oscuro"
+          title="Tema claro/oscuro"
+        >
+          ◐
+        </button>
+      </header>
+
+      <main id="messages" class="messages" aria-live="polite" aria-busy="false">
+        <section class="empty" id="empty-state">
+          <p class="empty-title">👋 Hola / Hi</p>
+          <p>
+            Puedo responder <strong>solo</strong> sobre los posts del blog de Alexis Alulema,
+            citando las fuentes. Pregunta en español o inglés.
+          </p>
+          <div class="suggestions">
+            <button class="chip" type="button">What are activation functions?</button>
+            <button class="chip" type="button">¿Cómo funcionan los transformers?</button>
+            <button class="chip" type="button">Explain Python asyncio</button>
+          </div>
+        </section>
+      </main>
+
+      <form id="composer" class="composer">
+        <textarea
+          id="input"
+          rows="1"
+          placeholder="Escribe tu pregunta…  ·  Type your question…"
+          autocomplete="off"
+          aria-label="Tu pregunta"
+        ></textarea>
+        <button id="send" class="send-btn" type="submit" aria-label="Enviar">➤</button>
+      </form>
+      <p class="hint"><kbd>Enter</kbd> envía · <kbd>Shift</kbd>+<kbd>Enter</kbd> salto de línea</p>
+    </div>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

@@ -133,3 +133,75 @@ Bitácora del proyecto: actividades, decisiones, desafíos y avances. Se actuali
 ### Siguiente
 - **Fase 3 — UI de chat en `/`**: single-page vanilla, SSE con `fetch()`+`ReadableStream`,
   tema del sitio en vivo (`demo-theme.css`), citas y rehúso grounded.
+
+---
+
+## 2026-08-03 — 🎉 Primer e2e verde en la NUC (Fase 1+2 con stack real)
+
+Primer flujo RAG completo funcionando end-to-end en la NUC Ubuntu con el stack real
+(pgvector sembrado + Ollama/Qwen2.5-1.5B-Instruct + FastAPI). **Hito.**
+
+### Setup validado
+- **Ingesta real:** `python -m ingest.run` → `db/dump.sql` + `db/snapshot.jsonl` (**178 chunks / 34 posts**,
+  28 EN + 6 ES). Deps de ingesta en el venv (`requirements-ingest.txt`).
+- **DB:** contenedor `pgvector/pgvector:pg16` (`rag/rag/rag` @ 5432), sembrado con el dump.
+- **LLM:** Ollama nativo, `qwen2.5:1.5b-instruct` (tag confirmado válido contra el registry).
+- **App:** `python -m uvicorn app.main:app --host 0.0.0.0 --port 8080` en el venv.
+
+### Resultado del `curl POST /chat` ("What are activation functions?")
+- ✅ **sources**: recuperó los 2 posts correctos (EN *Activation Functions* + ES *Funciones de
+  Activación*) → **retrieval cross-lingual** OK; citas con título/url/lang/fecha, dedupe por post.
+- ✅ **streaming SSE**: tokens uno a uno, cerrado con `event: done`.
+- ✅ **grounded**: respuesta anclada al contenido real (ω/weights, sigmoid, ReLU, Swish, backprop).
+- ✅ **idioma**: pregunta EN → respuesta EN.
+
+### Notas / benignos (confirmados)
+- `HF_TOKEN unauthenticated` y `Token indices (510 > 128)` → **ruido**, no errores (el embedder parte
+  en ventanas ≤128 + mean-pooling; el run completa y escribe 178 chunks). Silenciable con
+  `TRANSFORMERS_VERBOSITY=error`.
+- Posts con "1 chunk" → verificado que son cortos de verdad (video/how-tos), no fuga del extractor.
+- **Aprendizajes de entorno (NUC):** correr desde la raíz del repo + venv (`python -m uvicorn`,
+  no `uvicorn` suelto, para no caer al Python de conda base); `psycopg[binary,pool]` incluye
+  `psycopg_pool`; tras reboot `docker start rag-pg` (no `docker run`).
+
+### Pendiente (no bloquea)
+- Calibrar `SIMILARITY_THRESHOLD` (0.30 placeholder) con más preguntas reales, incl. fuera de corpus
+  (verificar rehúso grounded) y una pregunta ES.
+
+---
+
+## 2026-08-03 — Fase 3 (UI de chat en `/`)
+
+### Hecho
+- UI single-page vanilla en `app/static/`: `index.html`, `styles.css`, `app.js`.
+- **Streaming token a token** consumiendo el SSE de `POST /chat` con `fetch()` + `ReadableStream`
+  (parser SSE manual; `EventSource` no sirve porque el endpoint es POST). Maneja los eventos
+  `sources` / `token` / `error` / `done`.
+- **Historial en el cliente** (`history[]`), se reenvía completo en cada turno (server stateless).
+- **Tema del sitio en vivo**: `<link href="https://alexisalulema.com/demo-theme.css">`; estilos con
+  `var(--token, fallback)` → **degradación elegante** si el tema no carga (no se hardcodea la paleta).
+  **Dark por defecto + light por `prefers-color-scheme`**; toggle propio con `data-theme` en `<html>`
+  (localStorage; los demos no comparten el toggle del sitio).
+- **Citas** bajo cada respuesta (título enlazado a `alexisalulema.com/blog/…` + badge de idioma).
+- **UX de rehúso/cierre**: sin `sources` no se muestra bloque de citas; si el stream se corta antes de
+  `done` (teardown/expiración de sesión) → aviso elegante y re-habilita el input.
+- `app/main.py`: sirve `index.html` en `/` (reemplaza el placeholder) + monta `/static`.
+
+### Decisiones
+- **Markdown-lite seguro** en el render: se escapa HTML y luego se resaltan `**negrita**` e `code`
+  inline (evita XSS; el resto se muestra con `white-space: pre-wrap`).
+- **Assets estáticos** vía `StaticFiles` en `/static`; `/` con `FileResponse` (no hornear HTML en
+  Python). Servir desde la raíz cumple el contrato del gateway.
+
+### Validación
+- ruff + **35 tests** (incluye `/` sirve la UI —tema + composer, sin placeholder— y `/static/*` 200).
+- Smoke de serving con TestClient (sin lifespan → sin torch/psycopg): `/`, `/static/app.js`,
+  `/static/styles.css`, `/healthz` → 200 con content-types correctos; checks de HTML/JS OK.
+
+### Pendiente (en NUC, con el stack arriba)
+- Prueba visual en navegador (`http://localhost:8080`): streaming, citas clicables, tema dark/light,
+  rehúso grounded, y corte de stream elegante.
+
+### Siguiente
+- **Fase 4 — Contenedores y e2e**: `Dockerfile` (app, hornea embeddings), `Dockerfile.ollama`
+  (Qwen), `Dockerfile.db` (postgres+pgvector+dump), `docker-compose` (3 servicios) y e2e en la NUC.

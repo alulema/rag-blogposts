@@ -13,7 +13,8 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app import rag
@@ -21,17 +22,11 @@ from app.config import get_settings
 from app.ollama_client import OllamaClient
 from app.retrieval import Retriever
 
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
 _SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
 _INDEX_SQL = (
     "CREATE INDEX IF NOT EXISTS chunks_embedding_idx "
     "ON chunks USING hnsw (embedding vector_cosine_ops)"
-)
-
-_PLACEHOLDER = (
-    "<!doctype html><html lang='es'><head><meta charset='utf-8'>"
-    "<title>RAG · alexisalulema.com</title></head>"
-    "<body><h1>RAG demo</h1><p>API activa. La UI de chat llega en la Fase 3. "
-    "Endpoint: <code>POST /chat</code> (SSE).</p></body></html>"
 )
 
 
@@ -75,6 +70,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="rag-blogposts", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 
 def get_retriever(request: Request) -> Retriever:
@@ -94,9 +90,9 @@ async def healthz():
     return {"status": "ok"}
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=FileResponse)
 async def root():
-    return _PLACEHOLDER
+    return FileResponse(_STATIC_DIR / "index.html")
 
 
 @app.post("/chat")

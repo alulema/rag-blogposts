@@ -85,8 +85,15 @@ def test_healthz():
     assert TestClient(app).get("/healthz").json() == {"status": "ok"}
 
 
-def test_root_placeholder_html():
+def test_root_serves_chat_ui():
     r = TestClient(app).get("/")
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
-    assert "RAG demo" in r.text
+    assert "demo-theme.css" in r.text  # tema del sitio enlazado en vivo
+    assert 'id="composer"' in r.text  # UI de chat (no el placeholder)
+
+
+def test_static_assets_served():
+    client = TestClient(app)
+    assert client.get("/static/app.js").status_code == 200
+    assert client.get("/static/styles.css").status_code == 200
