@@ -37,7 +37,7 @@ def test_defaults():
     assert s.top_k == 5
     assert s.llm_model == "qwen2.5:1.5b-instruct"
     assert s.embed_model == "paraphrase-multilingual-MiniLM-L12-v2"
-    assert s.similarity_threshold == pytest.approx(0.30)
+    assert s.similarity_threshold == pytest.approx(0.32)
 
 
 def test_env_override(monkeypatch):

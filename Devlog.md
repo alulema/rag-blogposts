@@ -233,6 +233,17 @@ supera `SIMILARITY_THRESHOLD` (hoy 0.30, placeholder). Elegirlo bien requiere **
 ### Pendiente (correr en la NUC, con Postgres sembrado + venv)
 - `python -m tools.calibrate_threshold` → pegar salida. Con el umbral recomendado, actualizar el
   default en `app/config.py` y `.env.example`, y anotar el valor + evidencia aquí.
+### Resultado (NUC, corpus de 178 chunks) — 2026-08-12
+`python -m tools.calibrate_threshold --json`:
+```json
+{ "threshold": 0.321, "separated": true, "in_min": 0.4379, "out_max": 0.2047,
+  "gap": 0.2332, "misclassified_in": [], "misclassified_out": [] }
+```
+- **Separación limpia** (gap ≈ 0.233): in-corpus min ≈ **0.438** vs out-of-corpus max ≈ **0.205**;
+  **0 mal clasificados** en ambos grupos (incl. cross-lingual).
+- **Decisión:** `SIMILARITY_THRESHOLD = 0.32` (redondeo legible del 0.321, al medio del hueco
+  0.205–0.438 → ~0.11 de margen a cada lado: robusto sin ser frágil). Fijado en `app/config.py`
+  y `.env.example`; test de default actualizado.
 
 ### Siguiente
-- Fijar el umbral con los datos de la NUC → luego **Fase 4** (contenedores + e2e).
+- **Fase 4** (contenedores + docker-compose + e2e en la NUC).

@@ -39,7 +39,7 @@ class Settings(BaseSettings):
 
     # --- Retrieval RAG ---
     top_k: int = 5  # TOP_K
-    similarity_threshold: float = 0.30  # SIMILARITY_THRESHOLD (grounded-only)
+    similarity_threshold: float = 0.32  # SIMILARITY_THRESHOLD (grounded-only; calibrado 2026-08-12)
 
     # --- Ingesta (build-time): chunking ---
     chunk_tokens: int = 600  # CHUNK_TOKENS
