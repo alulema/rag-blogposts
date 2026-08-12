@@ -1,0 +1,6 @@
+# Herramientas de desarrollo (lint + tests). NO son parte del runtime del demo
+# ni de la imagen del contenedor — solo para autoría/CI y para correr la suite local.
+#   pip install -r requirements-dev.txt
+
+ruff>=0.16
+pytest>=8.2

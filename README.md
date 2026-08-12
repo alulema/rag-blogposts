@@ -41,7 +41,7 @@ Un Container App con **3 contenedores** que comparten `localhost`:
 ```bash
 python -m venv .venv && .\.venv\Scripts\activate   # Windows (Linux/mac: source .venv/bin/activate)
 pip install -r requirements.txt
-pip install ruff pytest                             # herramientas de dev
+pip install -r requirements-dev.txt                 # ruff + pytest (herramientas de dev)
 ruff check . && ruff format --check .
 pytest
 ```
