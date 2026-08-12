@@ -205,3 +205,34 @@ Primer flujo RAG completo funcionando end-to-end en la NUC Ubuntu con el stack r
 ### Siguiente
 - **Fase 4 — Contenedores y e2e**: `Dockerfile` (app, hornea embeddings), `Dockerfile.ollama`
   (Qwen), `Dockerfile.db` (postgres+pgvector+dump), `docker-compose` (3 servicios) y e2e en la NUC.
+
+---
+
+## 2026-08-04 — Calibración de `SIMILARITY_THRESHOLD` (harness)
+
+### Contexto
+El umbral decide el **rehúso grounded**: la app responde solo si el **top-1** de similitud coseno
+supera `SIMILARITY_THRESHOLD` (hoy 0.30, placeholder). Elegirlo bien requiere **datos reales**
+(distribución de scores dentro vs fuera del corpus), que dependen del pgvector sembrado + embeddings
+(torch) → corre en la NUC.
+
+### Hecho
+- `tools/calibrate_threshold.py`: harness reproducible. Batería etiquetada de preguntas —**in-corpus
+  EN/ES**, **cross-lingual** y **out-of-corpus**— contra el pgvector sembrado; imprime top-1 por
+  pregunta y **recomienda un umbral**.
+- Lógica pura `recommend_threshold(in_top1, out_top1)`: si hay **separación limpia** (min_in > max_out)
+  → umbral en el hueco (`margin_frac`); si hay **solapamiento** → umbral que maximiza la precisión de
+  clasificación (responder in / rehusar out) y reporta los mal clasificados.
+- `tests/test_calibrate.py` (5 tests de la lógica pura). Total suite: **40 tests**, ruff limpio.
+
+### Decisiones
+- Calibrar sobre **top-1** (no top-k): el rehúso se dispara cuando el mejor chunk cae bajo el umbral
+  (si el top-1 no pasa, ninguno pasa → lista vacía → rehúso). Coincide con `Retriever`.
+- Harness en `tools/` (no runtime del demo); reusa `app.embeddings`/`app.retrieval`.
+
+### Pendiente (correr en la NUC, con Postgres sembrado + venv)
+- `python -m tools.calibrate_threshold` → pegar salida. Con el umbral recomendado, actualizar el
+  default en `app/config.py` y `.env.example`, y anotar el valor + evidencia aquí.
+
+### Siguiente
+- Fijar el umbral con los datos de la NUC → luego **Fase 4** (contenedores + e2e).

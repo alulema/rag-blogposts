@@ -84,6 +84,15 @@ curl -N -X POST localhost:8080/chat -H 'content-type: application/json' \
 
 Health check: `curl localhost:8080/healthz` → `{"status":"ok"}`.
 
+### Calibrar el umbral grounded (opcional, en la NUC con pgvector sembrado)
+
+`SIMILARITY_THRESHOLD` decide el rehúso *grounded* (responder solo si el top-1 de similitud
+coseno lo supera). Para recomendarlo con datos reales:
+
+```bash
+python -m tools.calibrate_threshold        # batería in/out-of-corpus → umbral recomendado
+```
+
 ### Local e2e con contenedores (Fase 4+)
 
 ```bash
