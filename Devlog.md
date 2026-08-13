@@ -285,5 +285,14 @@ supera `SIMILARITY_THRESHOLD` (hoy 0.30, placeholder). Elegirlo bien requiere **
 - `docker compose up -d --build` → validar e2e en `http://localhost:8080` + medir arranque en frío.
   Requiere `db/dump.sql` (ya generado).
 
+### ✅ e2e con contenedores VERDE (NUC) — 2026-08-12
+- `docker compose ps`: **los 3 contenedores `healthy`** (app :8080, db, ollama) → build de las 3
+  imágenes OK, healthchecks OK, `_wait_for_db`/schema/embedder OK dentro del contenedor.
+- `curl POST /chat` ("What are activation functions?"): **`event: sources`** con las 2 citas
+  correctas (EN + ES) → **`event: token`** en streaming. Flujo RAG completo **dentro de los 3
+  contenedores**, self-contained (embeddings + Qwen + corpus horneados). **Fase 4 cerrada.**
+- Nota: el primer intento falló por un typo del comando (`"messages">` en vez de `":"`, el `>` del
+  prompt de continuación de bash) — la app respondió con validación JSON correcta (no era bug).
+
 ### Siguiente
 - **Fase 5 — CI/GHCR**: workflows de build+push de las 3 imágenes (públicas) + `refresh-corpus.yml`.
