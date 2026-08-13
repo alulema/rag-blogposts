@@ -1,6 +1,11 @@
 # Ingesta build-time (fetch → clean → chunk → embed → dump.sql). Python 3.13.
 # Corre en CI / NUC, no en el runtime del demo.
 
+# La ingesta reutiliza app.config (chunk size, embed model, DSN, etc.), que usa pydantic-settings.
+# Sin esto, `python -m ingest.run` falla en CI con ModuleNotFoundError (refresh-corpus.yml instala
+# SOLO este archivo, no requirements.txt). Mismo pin que requirements.txt para evitar drift.
+pydantic-settings>=2.3
+
 # Fetch de posts públicos
 requests>=2.32
 

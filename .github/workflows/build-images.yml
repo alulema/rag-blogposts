@@ -31,7 +31,7 @@ jobs:
           - service: db
             dockerfile: db/Dockerfile.db
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # torch + embeddings (app) y Qwen (ollama) son grandes: libera espacio en el runner.
       - name: Free disk space
