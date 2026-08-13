@@ -1,0 +1,14 @@
+# Imagen `db`: Postgres 16 + pgvector con el corpus HORNEADO (dump.sql). Se siembra al primer
+# arranque vía /docker-entrypoint-initdb.d (data dir vacío en cada contenedor efímero → re-siembra).
+FROM pgvector/pgvector:pg16
+
+# Credenciales por defecto de una DB efímera co-localizada e interna (NO expuesta fuera del pod).
+# No son secretos (repo público, datos públicos); coinciden con el DB_DSN por defecto de la app.
+ENV POSTGRES_USER=rag \
+    POSTGRES_PASSWORD=rag \
+    POSTGRES_DB=rag
+
+# El dump (schema + INSERTs + índice HNSW) se ejecuta al inicializar el cluster.
+COPY db/dump.sql /docker-entrypoint-initdb.d/dump.sql
+
+EXPOSE 5432

@@ -247,3 +247,43 @@ supera `SIMILARITY_THRESHOLD` (hoy 0.30, placeholder). Elegirlo bien requiere **
 
 ### Siguiente
 - **Fase 4** (contenedores + docker-compose + e2e en la NUC).
+
+---
+
+## 2026-08-12 — Fase 4 (contenedores + docker-compose)
+
+### Hecho
+- **`Dockerfile`** (app): `python:3.13-slim`; **torch CPU-only** (índice `download.pytorch.org/whl/cpu`
+  → imagen mucho más liviana), deps, y **modelo de embeddings horneado** en build-time; runtime
+  **OFFLINE** (`HF_HUB_OFFLINE=1`/`TRANSFORMERS_OFFLINE=1`). COPY selectivo (`app/` + `db/schema.sql`;
+  **no** `dump.sql`). `libgomp1` para torch.
+- **`Dockerfile.ollama`**: base `ollama/ollama` con **Qwen horneado** (`ollama serve &` → espera →
+  `ollama pull`); `OLLAMA_HOST=0.0.0.0:11434` para que `app` lo alcance.
+- **`db/Dockerfile.db`**: `pgvector/pgvector:pg16` + `dump.sql` en `/docker-entrypoint-initdb.d`
+  (siembra al primer init; contenedor efímero sin volumen → re-siembra siempre).
+- **`docker-compose.yml`**: 3 servicios con **healthchecks** (db `pg_isready`, ollama `ollama list`,
+  app `/healthz`) y **orden de arranque** (`app` depends_on db+ollama `service_healthy`). Solo
+  publica **8080** (db/ollama internos → no chocan con los sueltos de la NUC).
+- **`.dockerignore`**: excluye `.venv`/tests/tools/caches/docs; conserva `app/` y `db/*.sql`.
+- **Resiliencia de arranque** (`app/main.py`): `_wait_for_db` reintenta la conexión a Postgres antes
+  de crear el pool/schema → tolera que los 3 contenedores arranquen a la vez (ACA) o que el seed de
+  la DB aún no termine. `DB_WAIT_RETRIES` por env.
+
+### Decisiones
+- **Imágenes GHCR nombradas** `ghcr.io/alulema/rag-demo-{app,ollama,db}:latest` (etiqueta puesta en
+  compose; el push a GHCR es Fase 5).
+- **Credenciales `rag/rag`** en la imagen db: no son secreto (DB efímera interna, datos públicos);
+  coinciden con `DB_DSN` por defecto.
+- Torch **CPU-only** explícito: cumple "sin GPU" y reduce el tamaño de imagen drásticamente.
+
+### Validación (autoría)
+- ruff + **42 tests** (nuevos: `test_startup.py` para `_wait_for_db`, con `psycopg` falso inyectado).
+- `docker-compose.yml` parseado (estructura: 3 servicios, depends_on healthy, healthchecks, solo 8080).
+- **Build/e2e reales NO se corren aquí** (Docker vive en la NUC, por el split de entorno acordado).
+
+### Pendiente (en la NUC)
+- `docker compose up -d --build` → validar e2e en `http://localhost:8080` + medir arranque en frío.
+  Requiere `db/dump.sql` (ya generado).
+
+### Siguiente
+- **Fase 5 — CI/GHCR**: workflows de build+push de las 3 imágenes (públicas) + `refresh-corpus.yml`.
