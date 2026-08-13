@@ -161,3 +161,40 @@ curl localhost:8080/         # tu app, directo
 Para validar el ruteo por subdominio + auth por token end-to-end (opcional, antes de publicar),
 coordina con el mantenedor de la infra: tiene un `docker-compose` que levanta el gateway real +
 storage emulado y prueba el flujo completo.
+
+---
+
+## Notas capturadas del relay con la infra (`personal-website`)
+
+> Respuestas de alcance general traídas desde el Copilot de `personal-website` (vía Alexis, relay
+> humano). Se capturan aquí para que el contrato sea el cerebro compartido (per `CLAUDE.md`).
+
+### 2026-08-12 — Pull policy en provisión y refresh event-driven
+
+**1) Pull policy: siempre `:latest` fresco (sin digest pineado).**
+La provisión (`demo-provision.yml`) crea un RG efímero nuevo (`rg-demo-<slot>`) + un Container App
+nuevo (primera revisión). ACA resuelve y **jala `:latest` contra el manifest actual de GHCR** al
+crear la revisión (revisión nueva = pull nuevo; no hay `imagePullPolicy`, ACA no es k8s). Por tanto
+**una imagen recién republicada llega sola al próximo demo** — cero acción de la infra.
+- **Caveats:** tag mutable ⇒ **sin rollback ni atomicidad** (lo que sea `:latest` al provisionar es
+  lo que ve el usuario). Si se quiere rollback/pin: publicar además un tag inmutable (`:<gitsha>` o
+  `:<fecha-corpus>`) y pasárselo a la infra para fijar el param `image` del Bicep.
+- **Demos en vuelo NO se actualizan** (correcto: efímeros ~20 min); el refresh solo afecta demos
+  provisionados **después** del push.
+
+**2) Refresh event-driven cross-repo: `repository_dispatch` (Opción A, recomendada).**
+Publicar post = Keystatic commitea markdown a `alulema/personal-website` (`src/content/blog-{en,es}/**`);
+la infra ya dispara workflows por REST API con un PAT. Al publicar, la infra hace
+`POST /repos/alulema/rag-blogposts/dispatches` con `event_type: refresh-corpus` → nuestro
+`refresh-corpus.yml` (trigger `repository_dispatch`, **debe vivir en el default branch**) reconstruye
+`rag-demo-db:latest` → por (1), el próximo demo sirve el corpus fresco.
+- **Token (única credencial):** lo **minta el dueño de este repo** (fine-grained PAT scoped a
+  `alulema/rag-blogposts`, **Contents: Read and write** para Opción A); Alexis lo guarda como secret
+  `RAG_DISPATCH_TOKEN` en `personal-website`. La infra no puede scopear un token a un repo ajeno.
+- **Timing (importante):** nuestra ingesta lee el **sitemap público en vivo**, así que el dispatch
+  debe llegar **después** de que el deploy del sitio publique el post (si no, re-ingerimos antes de
+  que el post esté live → no-op). Coordinar que el trigger salga tras `deploy.yml`, no en el push.
+- **Drafts:** como ingerimos del sitio público, los borradores **no** entran; un trigger espurio
+  produce un refresh no-op (sin diff → sin rebuild). No requiere filtrado especial.
+- La infra deja listo su `notify-rag-refresh.yml` (push a `main` con paths de blog → dispatch) en
+  cuanto se confirmen: repo, `event_type`, token, forma del `client_payload`, y default branch.

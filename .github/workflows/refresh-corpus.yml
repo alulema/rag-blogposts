@@ -1,0 +1,81 @@
+name: Refresh corpus
+
+# Re-ingesta del blog público → regenera db/dump.sql + snapshot → los commitea → rebuild+push
+# de la imagen `db` a GHCR. Un clic. NO es reentrenamiento: el modelo es fijo; solo se re-indexa.
+# El próximo demo provisionado usa el corpus fresco.
+
+on:
+  workflow_dispatch:
+  # Event-driven: personal-website hace POST /dispatches (event_type: refresh-corpus) al publicar
+  # un post → refresco inmediato. repository_dispatch solo dispara en el default branch (main).
+  repository_dispatch:
+    types: [refresh-corpus]
+  # Refresco automático semanal (lunes 06:00 UTC) como red de seguridad / si el trigger no llega.
+  # Ajusta la cadencia o quita el cron según necesites; el dispatch manual queda siempre.
+  schedule:
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: refresh-corpus
+  cancel-in-progress: true # debounce: varios posts seguidos → un solo rebuild
+
+permissions:
+  contents: write # commitear dump.sql + snapshot regenerados
+  packages: write # rebuild + push de la imagen db
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log trigger
+        run: |
+          echo "event=${{ github.event_name }}"
+          echo "source=${{ github.event.client_payload.source || 'n/a' }}"
+          echo "commit=${{ github.event.client_payload.commit || 'n/a' }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ingest deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-ingest.txt
+
+      - name: Re-ingest corpus → db/dump.sql
+        run: python -m ingest.run
+
+      - name: Commit dump + snapshot si cambiaron
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -z "$(git status --porcelain db/dump.sql db/snapshot.jsonl)" ]; then
+            echo "corpus sin cambios; nada que commitear."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git add db/dump.sql db/snapshot.jsonl
+            git commit -m "chore(corpus): refresca dump.sql + snapshot" \
+              -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        if: steps.commit.outputs.changed == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rebuild & push db image
+        if: steps.commit.outputs.changed == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: db/Dockerfile.db
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/rag-demo-db:latest

@@ -296,3 +296,98 @@ supera `SIMILARITY_THRESHOLD` (hoy 0.30, placeholder). Elegirlo bien requiere **
 
 ### Siguiente
 - **Fase 5 — CI/GHCR**: workflows de build+push de las 3 imágenes (públicas) + `refresh-corpus.yml`.
+
+---
+
+## 2026-08-12 — Fase 5 (CI/GHCR)
+
+### Decisión (dueño no disponible → seguí `CLAUDE.md`)
+`db/dump.sql` se **commitea** al repo; el build hornea el dump commiteado (rápido, sin torch),
+y `refresh-corpus.yml` es quien lo **regenera + commitea + rebuild/push** de la imagen `db`. Es
+exactamente lo que dice `CLAUDE.md` ("commitea snapshot + dump") y coincide con el `.gitignore`
+(dump.sql NO ignorado).
+
+### Hecho
+- **`.github/workflows/build-images.yml`** (push a `main` + `workflow_dispatch`): matrix
+  `[app, ollama, db]` → build+push a `ghcr.io/<owner>/rag-demo-*:{latest,sha}`. Login con
+  `GITHUB_TOKEN` (`packages: write`), buildx + caché gha por servicio, paso de "free disk space"
+  (torch/Qwen son grandes), `concurrency` con cancel-in-progress.
+- **`.github/workflows/refresh-corpus.yml`** (`workflow_dispatch`, `schedule` comentado): setup
+  Python 3.13 → `requirements-ingest.txt` → `python -m ingest.run` → commit de `dump.sql`+`snapshot`
+  si cambiaron (`git status --porcelain`, con trailer Co-authored-by) → rebuild+push de la imagen
+  `db`. Pasos condicionados a `steps.commit.outputs.changed`.
+
+### Notas / decisiones
+- Imágenes con `ghcr.io/${{ github.repository_owner }}/rag-demo-*` (owner=alulema, lowercase).
+- Pushes con `GITHUB_TOKEN` **no** disparan otros workflows → refresh-corpus rebuildea la imagen
+  `db` él mismo (sin bucles), consistente con el diseño.
+- **Bootstrap pendiente:** `db/dump.sql` **aún no está commiteado** → el job `db` de build-images
+  fallará hasta commitear el dump (generado en la NUC) o correr `refresh-corpus` una vez.
+
+### Validación (autoría)
+- Ambos YAML parseados (triggers, permisos, matrix, pasos). ruff + 42 tests siguen verdes (sin
+  cambios de código). **Los runs reales corren en GitHub Actions** (no aquí).
+
+### Pendiente (dueño)
+- Commitear `db/dump.sql` (+ `snapshot.jsonl`) generado en la NUC.
+- Merge a `main` → primer run de `build-images` → marcar los 3 packages **Public** en GHCR.
+
+### Siguiente
+- **Fase 6 — Hand-off**: manifest para la infra + `README` final + comandos git.
+
+---
+
+## 2026-08-12 — Modelo de freshness del corpus (decisión)
+
+**Pregunta del dueño:** ¿regenerar `dump.sql` en cada deploy a Azure (para captar posts nuevos)?
+
+**Decisión: NO regenerar en provisión/deploy.** Rompería pilares del proyecto:
+- **Arranque rápido / teardown abrupto** (sesión ~20 min): re-ingerir + embeddings (torch) en cada
+  provisión gastaría minutos del ciclo de vida del demo.
+- **Self-contained / sin llamadas externas en prod**: la ingesta trae posts de `alexisalulema.com`
+  → es actividad **build-time**, no runtime. Regenerar en provisión = llamadas externas en vivo.
+- **Non-goal explícito** (`CLAUDE.md`): "sin reindex en runtime (corpus fijo por imagen)".
+- Fiabilidad/costo: si el sitio cambia o está caído en provisión, el demo se rompería.
+
+**Modelo correcto (2 niveles):** el corpus se refresca al **construir la imagen**, no al desplegarla.
+1. **Periódico (hecho):** activé el `schedule` semanal en `refresh-corpus.yml` → re-indexa y
+   republica la imagen `db`; el **próximo demo provisionado** usa el corpus fresco. Tunable + dispatch manual.
+2. **Event-driven (pendiente, requiere infra):** que el pipeline de publicación del sitio dispare
+   `refresh-corpus` (p.ej. `repository_dispatch`) al publicar un post → freshness exacta. Necesita
+   coordinación con `personal-website` (relay).
+
+**Preguntas abiertas para la infra (`personal-website`, vía relay):**
+- ¿La provisión **siempre** hace pull de `ghcr.io/alulema/rag-demo-db:latest` (fresco), o pinea/cachea
+  un digest? (determina si la imagen recién republicada llega sola a los nuevos demos).
+- ¿Puede el flujo de publicación del sitio disparar `refresh-corpus` vía `repository_dispatch`
+  (+ token)? → freshness event-driven en vez de polling semanal.
+- (Las respuestas de alcance general se capturan en `DEMO_INTEGRATION.md`.)
+
+### Resolución (relay respondido) — 2026-08-12
+La infra confirmó: **(1)** provisión siempre jala `:latest` fresco (RG+revisión nuevos = pull nuevo)
+→ imagen republicada llega sola al próximo demo, cero acción; demos en vuelo no cambian. **(2)**
+`repository_dispatch` (Opción A) viable; me pasaron su workflow turnkey. Respuestas capturadas en
+`DEMO_INTEGRATION.md` (§Notas capturadas del relay).
+- **Cableé mi lado:** `refresh-corpus.yml` ahora escucha `repository_dispatch: types:[refresh-corpus]`
+  (+ `schedule` semanal como red de seguridad), `concurrency` con `cancel-in-progress: true` (debounce)
+  y un paso "Log trigger" (event/source/commit del `client_payload`).
+- **Insight de timing (avisado a la infra):** ingerimos del **sitemap público en vivo** → el dispatch
+  debe salir **tras** el deploy del sitio (si no, no-op). Drafts se auto-excluyen (no están en el sitio).
+- **Pendiente del dueño (acción manual):** mintar un **fine-grained PAT** scoped a `alulema/rag-blogposts`
+  (**Contents: R/W**) y pasárselo a Alexis como secret `RAG_DISPATCH_TOKEN` en `personal-website`.
+- **Decisión client_payload:** ping "rebuild-all" (el pipeline re-ingiere todo el sitemap; incremental
+  no aporta para 34 posts) + `source`/`commit` para trazabilidad.
+
+### Aclaración: ¿dónde corre el schedule/CI? (no en el demo)
+Confusión común entre dos capas homónimas:
+- **Repo `alulema/rag-blogposts` (GitHub):** siempre existe en github.com; sus **GitHub Actions**
+  (schedule / repository_dispatch / workflow_dispatch) corren en **runners de GitHub**,
+  independientes de si hay un demo provisionado. Aquí se (re)construye y publica la imagen `db` a GHCR.
+- **Demo provisionado (Azure Container App):** efímero ~20 min; solo **consume** la imagen ya
+  horneada de GHCR. No corre CI ni ingesta.
+→ El `schedule` semanal lo corre **rag-blogposts en GitHub Actions**, NO el demo ni personal-website.
+Mantener `refresh-corpus` en este repo es correcto (separación de concerns): personal-website solo
+**notifica** (dispatch). Con el event-driven cableado, el schedule queda como **red de seguridad**.
+- **Caveat GitHub:** los workflows con `schedule` se **auto-desactivan tras 60 días sin actividad**
+  del repo (público). Los dispatches al publicar posts cuentan como actividad; si el corpus no
+  cambia en 60 días, reactivar es un clic (o un keepalive).
