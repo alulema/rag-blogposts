@@ -27,7 +27,7 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Log trigger
         run: |
@@ -35,7 +35,7 @@ jobs:
           echo "source=${{ github.event.client_payload.source || 'n/a' }}"
           echo "commit=${{ github.event.client_payload.commit || 'n/a' }}"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 

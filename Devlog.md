@@ -391,3 +391,28 @@ Mantener `refresh-corpus` en este repo es correcto (separación de concerns): pe
 - **Caveat GitHub:** los workflows con `schedule` se **auto-desactivan tras 60 días sin actividad**
   del repo (público). Los dispatches al publicar posts cuentan como actividad; si el corpus no
   cambia en 60 días, reactivar es un clic (o un keepalive).
+
+---
+
+## 2026-08-13 — Fix: `refresh-corpus` fallaba en CI (dep faltante) + bumps de acciones
+
+**Test e2e de la infra (¡el trigger funciona!):** al mergear a `main`, personal-website mandó el
+`repository_dispatch(refresh-corpus)` y disparó nuestro workflow (run real, event=`repository_dispatch`)
+→ **token `RAG_DISPATCH_TOKEN` y wiring confirmados end-to-end.** El camino event-driven está vivo.
+
+**Bug encontrado por ese run:** el paso *Re-ingest corpus* falló con
+`ModuleNotFoundError: No module named 'pydantic_settings'`.
+- **Causa raíz:** `ingest/run.py` importa `app.config` (reutiliza chunk size / embed model / DSN),
+  que usa `pydantic-settings`. Ese paquete estaba solo en `requirements.txt` (runtime), **no en
+  `requirements-ingest.txt`** — y `refresh-corpus.yml` instala solo este último. Local pasaba
+  desapercibido porque el venv tenía ambos (gap "funciona en mi máquina").
+- **Fix:** añadí `pydantic-settings>=2.3` a `requirements-ingest.txt` (mismo pin, con comentario del
+  porqué). **Validado** con venv aislado: instalando SOLO `pydantic-settings`, `from app.config
+  import get_settings` importa limpio (era la única dep externa que faltaba).
+- **Bonus (hygiene, no bloqueaba):** bump `actions/checkout@v4→v5` y `actions/setup-python@v5→v6`
+  en ambos workflows (Node20 deprecado → Node24), como sugirió la infra. YAML re-validado.
+- Suite: ruff + **42 tests** verdes.
+
+**Re-test (dueño):** Actions → *Refresh corpus* → **Run workflow** (dispatch manual; NO "Re-run jobs"
+del run viejo). Esperado PASS; probable "corpus sin cambios → nada que commitear" (el dump ya se
+horneó en `f3917c9`), lo cual es correcto: prueba el pipeline limpio de punta a punta.
