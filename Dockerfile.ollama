@@ -1,0 +1,16 @@
+# Imagen `ollama` con el modelo Qwen HORNEADO (self-contained; sin `ollama pull` en runtime).
+FROM ollama/ollama
+
+# Escucha en todas las interfaces para que el contenedor `app` lo alcance (en compose vía
+# el nombre de servicio; en ACA vía localhost). Por defecto Ollama solo ata 127.0.0.1.
+ENV OLLAMA_HOST=0.0.0.0:11434
+
+# Hornear el modelo: arranca el server en background, espera a que responda y hace el pull;
+# el blob queda persistido en /root/.ollama y se commitea en la capa de la imagen.
+ARG LLM_MODEL=qwen2.5:1.5b-instruct
+RUN ollama serve & \
+    until ollama list >/dev/null 2>&1; do sleep 1; done \
+    && ollama pull "${LLM_MODEL}"
+
+# El ENTRYPOINT/CMD del base (`ollama serve`) arranca el server en runtime con el modelo ya presente.
+EXPOSE 11434

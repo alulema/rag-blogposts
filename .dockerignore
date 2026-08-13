@@ -1,0 +1,29 @@
+# Contexto de build (raíz del repo). Excluye lo que no debe ir a NINGUNA imagen.
+# OJO: NO excluir db/dump.sql (imagen db) ni db/schema.sql (imagen app) ni app/.
+
+.git
+.gitignore
+.venv
+venv
+env
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# Dev / tests / tooling — no van a las imágenes de runtime
+tests
+tools
+requirements-dev.txt
+requirements-ingest.txt
+
+# Artefactos de ingesta que no se hornean (dump.sql SÍ se hornea en la imagen db)
+db/snapshot.jsonl
+
+# Docs / meta
+*.md
+.github
+.env
+.env.*

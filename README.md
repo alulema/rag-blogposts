@@ -93,14 +93,34 @@ coseno lo supera). Para recomendarlo con datos reales:
 python -m tools.calibrate_threshold        # batería in/out-of-corpus → umbral recomendado
 ```
 
-### Local e2e con contenedores (Fase 4+)
+### Local e2e con contenedores (en la NUC)
+
+Refleja el runtime del demo: 3 contenedores (`app` + `ollama` + `db`). Cada imagen es
+**self-contained** — el modelo de embeddings, Qwen y el corpus (`dump.sql`) van **horneados**.
 
 ```bash
-docker compose up -d --build      # app + ollama + db juntos → http://localhost:8080
+# 0) Requiere db/dump.sql (genéralo antes si no existe):
+python -m ingest.run
+
+# 1) Build + up (la primera vez tarda: baja torch, hornea embeddings y Qwen)
+docker compose up -d --build      # → http://localhost:8080
+
+# 2) Seguir el arranque (healthchecks db/ollama, luego app)
+docker compose ps
+docker compose logs -f app
+
+# 3) Probar y parar
+curl -N -X POST localhost:8080/chat -H 'content-type: application/json' \
+  -d '{"messages":[{"role":"user","content":"What are activation functions?"}]}'
+docker compose down
 ```
+
+> Solo se publica el puerto **8080**; `db` (5432) y `ollama` (11434) quedan internos a la red de
+> compose → **no chocan** con un Postgres/Ollama que ya corras suelto en la NUC. Imágenes
+> etiquetadas `ghcr.io/alulema/rag-demo-{app,ollama,db}:latest` (se publican a GHCR en la Fase 5).
 
 ## Estado
 
 En construcción por fases (ver `Devlog.md`): **Fase 0 (scaffold)** ✅ · **Fase 1 (ingesta)** ✅ ·
-**Fase 2 (app + RAG core)** ✅ — *primer e2e verde en la NUC* · Fase 3 (UI) → Contenedores/e2e →
-CI → Hand-off.
+**Fase 2 (app + RAG core)** ✅ · **Fase 3 (UI)** ✅ · **Fase 4 (contenedores)** ✅ *(build/e2e en la
+NUC)* → Fase 5 (CI/GHCR) → Fase 6 (hand-off).

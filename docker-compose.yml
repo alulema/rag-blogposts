@@ -1,0 +1,55 @@
+# Local e2e (en la NUC): app + ollama + db. Refleja el runtime del demo (3 contenedores).
+# Solo se publica el puerto de `app` (8080); db/ollama quedan internos a la red de compose
+# → sin choque con un Postgres/Ollama que ya corras suelto en la NUC (5432 / 11434).
+#
+#   docker compose up -d --build      →  http://localhost:8080
+#
+# Requiere db/dump.sql horneado (genéralo antes con:  python -m ingest.run).
+
+services:
+  db:
+    build:
+      context: .
+      dockerfile: db/Dockerfile.db
+    image: ghcr.io/alulema/rag-demo-db:latest
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "rag", "-d", "rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  ollama:
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama
+    image: ghcr.io/alulema/rag-demo-ollama:latest
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/alulema/rag-demo-app:latest
+    ports:
+      - "8080:8080"
+    environment:
+      DB_DSN: postgresql://rag:rag@db:5432/rag
+      OLLAMA_HOST: http://ollama:11434
+      LLM_MODEL: qwen2.5:1.5b-instruct
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s

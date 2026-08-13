@@ -7,6 +7,8 @@ de ``config``. Diseñada para teardown abrupto: estado solo en memoria + DB efí
 from __future__ import annotations
 
 import json
+import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
@@ -47,12 +49,32 @@ def _ensure_schema(pool, schema_sql: str) -> None:
         conn.execute(_INDEX_SQL)
 
 
+def _wait_for_db(dsn: str, retries: int = 60, delay: float = 2.0) -> None:
+    """Espera a que la DB efímera acepte conexiones (los 3 contenedores arrancan juntos en ACA)."""
+    import psycopg
+
+    last_err: Exception | None = None
+    for attempt in range(retries):
+        try:
+            with psycopg.connect(dsn, connect_timeout=3) as conn:
+                conn.execute("SELECT 1")
+            return
+        except Exception as err:  # noqa: BLE001 - reintenta hasta que Postgres esté listo
+            last_err = err
+            if attempt < retries - 1:
+                time.sleep(delay)
+    raise RuntimeError(f"DB no disponible tras {retries} intentos: {last_err}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     from psycopg_pool import ConnectionPool
 
     from app.embeddings import Embedder
+
+    db_retries = int(os.environ.get("DB_WAIT_RETRIES", "60"))
+    await run_in_threadpool(_wait_for_db, settings.db_dsn, db_retries)
 
     pool = ConnectionPool(settings.db_dsn, min_size=1, max_size=4, open=True)
     _ensure_schema(pool, _SCHEMA_PATH.read_text(encoding="utf-8"))
