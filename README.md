@@ -119,8 +119,22 @@ docker compose down
 > compose → **no chocan** con un Postgres/Ollama que ya corras suelto en la NUC. Imágenes
 > etiquetadas `ghcr.io/alulema/rag-demo-{app,ollama,db}:latest` (se publican a GHCR en la Fase 5).
 
+## CI / GHCR
+
+- **`.github/workflows/build-images.yml`** (push a `main` + `workflow_dispatch`): construye y
+  publica las **3 imágenes** a GHCR (`ghcr.io/<owner>/rag-demo-{app,ollama,db}:latest`). La imagen
+  `db` hornea el **`db/dump.sql` commiteado**. Tras el primer push, marca los packages como
+  **Public** (Settings del package en GHCR).
+- **`.github/workflows/refresh-corpus.yml`** (`workflow_dispatch` + `schedule` **semanal**): re-ingesta
+  del blog → regenera `db/dump.sql` + `snapshot.jsonl` → los **commitea** → rebuild+push de la
+  imagen `db`. No es reentrenamiento: solo re-indexa el corpus. El **próximo demo provisionado**
+  usa el corpus fresco.
+
+> **Requisito:** `db/dump.sql` debe estar **commiteado** para que el build de la imagen `db`
+> funcione. Genéralo (`python -m ingest.run`) y commitéalo, o corre `refresh-corpus` una vez.
+
 ## Estado
 
 En construcción por fases (ver `Devlog.md`): **Fase 0 (scaffold)** ✅ · **Fase 1 (ingesta)** ✅ ·
 **Fase 2 (app + RAG core)** ✅ · **Fase 3 (UI)** ✅ · **Fase 4 (contenedores)** ✅ *(build/e2e en la
-NUC)* → Fase 5 (CI/GHCR) → Fase 6 (hand-off).
+NUC)* · **Fase 5 (CI/GHCR)** ✅ *(workflows; primer run en GitHub)* → Fase 6 (hand-off).
