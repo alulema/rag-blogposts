@@ -12,6 +12,7 @@ se provisiona on-demand, corre un rato y se destruye solo.
 
 - **`CLAUDE.md`** — plan del proyecto (fuente de verdad del stack y la arquitectura).
 - **`DEMO_INTEGRATION.md`** — contrato de integración con la infra de demos efímeros.
+- **`HANDOFF.md`** — manifest de hand-off para provisionar el demo (imágenes, puerto, recursos, ACA).
 - **`Devlog.md`** — bitácora viva (actividades, decisiones, desafíos, avances).
 
 ## Stack
@@ -136,5 +137,6 @@ docker compose down
 ## Estado
 
 En construcción por fases (ver `Devlog.md`): **Fase 0 (scaffold)** ✅ · **Fase 1 (ingesta)** ✅ ·
-**Fase 2 (app + RAG core)** ✅ · **Fase 3 (UI)** ✅ · **Fase 4 (contenedores)** ✅ *(build/e2e en la
-NUC)* · **Fase 5 (CI/GHCR)** ✅ *(workflows; primer run en GitHub)* → Fase 6 (hand-off).
+**Fase 2 (app + RAG core)** ✅ · **Fase 3 (UI)** ✅ · **Fase 4 (contenedores)** ✅ ·
+**Fase 5 (CI/GHCR)** ✅ · **Fase 6 (hand-off)** ✅ — **imágenes públicas en GHCR, listo para
+provisionar** (ver `HANDOFF.md`).

@@ -416,3 +416,35 @@ Mantener `refresh-corpus` en este repo es correcto (separación de concerns): pe
 **Re-test (dueño):** Actions → *Refresh corpus* → **Run workflow** (dispatch manual; NO "Re-run jobs"
 del run viejo). Esperado PASS; probable "corpus sin cambios → nada que commitear" (el dump ya se
 horneó en `f3917c9`), lo cual es correcto: prueba el pipeline limpio de punta a punta.
+
+---
+
+## 2026-08-14 — Fase 6 (hand-off) + verificación de readiness para provisión
+
+**Infra confirmó que completó su lado** → se procede a provisionar el demo en un subdominio.
+Verifiqué el estado real antes del hand-off:
+- `origin/main` head = `da5ab5e chore(corpus): refresca dump.sql + snapshot` → **el bot de
+  `refresh-corpus` corrió VERDE** (hotfix #12 funcionó; re-ingirió y commiteó). Pipeline e2e vivo.
+- **Las 3 imágenes están PÚBLICAS y jalables en GHCR** (verificado con token anónimo → HTTP 200 en
+  `rag-demo-{app,ollama,db}:latest`). Sin credenciales, justo lo que la infra necesita.
+- Nada bloqueante del lado del código/imágenes.
+
+**Entregable:** `HANDOFF.md` — manifest completo para la infra:
+- Tabla manifest (projectId `rag-demo`, 3 imágenes públicas, puerto 8080 interno sin auth,
+  shareable true, secretos ninguno, SSE, sidecars, `/healthz`).
+- **Dato crítico de provisión:** en **ACA multi-contenedor los 3 comparten `localhost`** → la app
+  usa sus **defaults** (`localhost:5432` / `localhost:11434`), **cero env overrides**. Los
+  `environment:` del `docker-compose.yml` (nombres de servicio `db`/`ollama`) son SOLO de Compose;
+  no aplican en ACA. (Punto fácil de confundir → lo dejé explícito.)
+- Recursos sugeridos (~3.5 vCPU / ~6 GiB; Qwen es el que más pesa), arranque/health/cold-start,
+  teardown, freshness, overrides opcionales, y checklist de provisión.
+
+**Estado del proyecto:** Fases 0–6 ✅. Del lado de rag-blogposts, **listo para provisionar**.
+Pendientes = acciones de la infra (registrar `rag-demo` con las 3 imágenes y enrutar a `app:8080`).
+
+### Nota de proceso — recuperación de un enredo de git (CRLF)
+El commit de Fase 6 inicial (`2e7d1c6`) capturó solo `HANDOFF.md`; las ediciones de `Devlog.md` y
+`README.md` quedaron atrapadas en un `git stash` (el `stash pop` falló por conflicto CRLF de
+`db/dump.sql`). Se recuperaron re-aplicándolas. **Causa raíz recurrente:** git de Windows
+(`core.autocrlf=true`) vs git de WSL sobre el mismo working tree `/mnt/c` → phantoms de line-ending.
+**Fix recomendado:** `.gitattributes` (`* text=auto eol=lf`) + `core.autocrlf false` en Windows.
