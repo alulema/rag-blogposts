@@ -35,7 +35,7 @@ def test_defaults():
     assert s.app_host == "0.0.0.0"
     assert s.app_port == 8080
     assert s.top_k == 5
-    assert s.llm_model == "qwen2.5:1.5b-instruct"
+    assert s.llm_model == "qwen2.5:0.5b-instruct"
     assert s.embed_model == "paraphrase-multilingual-MiniLM-L12-v2"
     assert s.similarity_threshold == pytest.approx(0.32)
 

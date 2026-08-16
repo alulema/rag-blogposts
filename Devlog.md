@@ -448,3 +448,34 @@ El commit de Fase 6 inicial (`2e7d1c6`) capturó solo `HANDOFF.md`; las edicione
 `db/dump.sql`). Se recuperaron re-aplicándolas. **Causa raíz recurrente:** git de Windows
 (`core.autocrlf=true`) vs git de WSL sobre el mismo working tree `/mnt/c` → phantoms de line-ending.
 **Fix recomendado:** `.gitattributes` (`* text=auto eol=lf`) + `core.autocrlf false` en Windows.
+
+---
+
+## 2026-08-15 — Optimización de performance (feedback de la infra)
+
+El demo provisionado corre pero **lento**: Qwen 1.5B en CPU, 1 stream por usuario. La infra ya
+sesgó el CPU hacia `ollama` (1.5 de 2 vCPU) y confirmó que el cap de **ACA Consumption = 2 vCPU /
+4 GiB** (no escala más; horizontal no ayuda porque es latencia de un solo stream en CPU). **Los
+levers efectivos son de mi lado (imagen/app).** Aplicados:
+
+1. **Modelo más chico = el win grande:** default `qwen2.5:1.5b-instruct` → **`qwen2.5:0.5b-instruct`**
+   (verificado en el registry de Ollama). En CPU la velocidad de tokens escala ~inverso al tamaño →
+   **~3× más rápido**. Horneado vía `ARG LLM_MODEL` en `Dockerfile.ollama`; también en
+   `docker-compose.yml`, `app/config.py`, `.env.example`. 1.5B/7B siguen disponibles por env.
+2. **`MAX_OUTPUT_TOKENS` 512 → 256:** menos tokens = proporcionalmente menos espera.
+3. **Streaming token-a-token:** ya implementado (Fase 3, `app.js` con `fetch()`+`ReadableStream`) →
+   baja mucho la latencia percibida. Confirmado, sin cambios.
+4. `TOP_K` (5) y chunk size sin tocar por ahora (afectan grounding/calidad); quedan como levers
+   futuros si hace falta acortar el prefill.
+
+- **HANDOFF.md** actualizado: recursos con 0.5B y **corregido al cap real 2 vCPU / 4 GiB** (antes
+  decía ~3.5/6, que excede el plan Consumption); overrides con el nuevo default.
+- Validación: ruff + **42 tests**; tag `0.5b-instruct` consistente en los 5 sitios.
+- **Decisión (para confirmar):** 0.5B prioriza velocidad sobre calidad; es grounded (contexto dado)
+  así que la tarea principal es sintetizar+citar, que 0.5B multilingüe maneja. **Fácilmente
+  revertible** a 1.5B (o `1.5b-instruct-q3_K_M`) si la calidad se queda corta — el dueño lo valida
+  al ver el demo. `CLAUDE.md` NO se tocó (nombra 1.5B; es doc "fijado" → cambio de default a
+  criterio del dueño).
+
+**Siguiente:** republicar `rag-demo-ollama:latest` (build-images) con 0.5B horneado → avisar a la
+infra el tag/modelo para que ajuste `LLM_MODEL` en el bicep y re-optimice el split 2/4.

@@ -38,11 +38,13 @@ contenedor comparten el network namespace):
 
 | Contenedor | vCPU | Memoria | Nota |
 |---|---|---|---|
-| `ollama` | ~2 | ~3–4 GiB | Qwen2.5-1.5B-Instruct (Q4) horneado; inferencia CPU |
-| `app` | ~1 | ~1.5–2 GiB | FastAPI + modelo de embeddings (384-d) horneado |
-| `db` | ~0.5 | ~0.5–1 GiB | pgvector, 178 chunks |
+| `ollama` | ~1.5 | ~1.5–2 GiB | **Qwen2.5-0.5B-Instruct** (Q4) horneado; inferencia CPU — el lever de velocidad |
+| `app` | ~0.4 | ~1–1.5 GiB | FastAPI + modelo de embeddings (384-d) horneado |
+| `db` | ~0.1 | ~0.5 GiB | pgvector, 178 chunks |
 
-Total aprox. **~3.5 vCPU / ~6 GiB** para el Container App. (Ajustable; Qwen es el que más pesa.)
+**Cap de ACA Consumption = 2 vCPU / 4 GiB** (máximo del plan). El split lo maneja la infra, sesgado
+a `ollama` (~1.5 vCPU). Con el modelo **0.5B** el footprint baja y entra cómodo en el cap; en CPU es
+~3× más rápido en tokens/s que 1.5B (el demo es 1 stream por usuario, latencia limitada por CPU).
 
 ## Arranque y ciclo de vida
 
@@ -66,14 +68,15 @@ Total aprox. **~3.5 vCPU / ~6 GiB** para el Container App. (Ajustable; Qwen es e
 
 ## Overrides opcionales (env, si algún día se quieren)
 
-`LLM_MODEL` (p.ej. `qwen2.5:7b-instruct` — requiere hornear ese modelo en la imagen `ollama` y más
-RAM) · `TOP_K` (default 5) · `SIMILARITY_THRESHOLD` (default 0.32, calibrado) · `MAX_OUTPUT_TOKENS`
-(default 512) · `PROJECT_ID` / `DEMO_SLOT` (informativos).
+`LLM_MODEL` (default **`qwen2.5:0.5b-instruct`**, elegido por velocidad en CPU; `qwen2.5:1.5b-instruct`
+o `7b-instruct` dan más calidad pero requieren hornear ese modelo en la imagen `ollama` y más
+RAM/CPU) · `TOP_K` (default 5) · `SIMILARITY_THRESHOLD` (default 0.32, calibrado) · `MAX_OUTPUT_TOKENS`
+(default 256) · `PROJECT_ID` / `DEMO_SLOT` (informativos).
 
 ## Checklist de provisión (infra)
 
 1. Provisionar Container App multi-contenedor con las **3 imágenes** públicas de arriba.
 2. `app` = único con ingress interno, puerto **8080**, sirve `/`.
 3. **Sin secretos, sin env obligatorias** (defaults `localhost` correctos).
-4. Recursos ~3.5 vCPU / ~6 GiB (ver tabla).
+4. Recursos dentro del cap de ACA Consumption (**2 vCPU / 4 GiB**), sesgado a `ollama` (ver tabla).
 5. Enrutar `https://demoNN.alexisalulema.com/` → `app:8080`. Listo.
