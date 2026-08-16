@@ -28,8 +28,8 @@ class Settings(BaseSettings):
 
     # --- LLM local (Ollama) — $0 API, sin llamadas externas en prod ---
     ollama_host: str = "http://localhost:11434"  # OLLAMA_HOST
-    llm_model: str = "qwen2.5:1.5b-instruct"  # LLM_MODEL (opción 7B por env)
-    max_output_tokens: int = 512  # MAX_OUTPUT_TOKENS
+    llm_model: str = "qwen2.5:0.5b-instruct"  # LLM_MODEL (0.5B por velocidad CPU; 1.5B/7B por env)
+    max_output_tokens: int = 256  # MAX_OUTPUT_TOKENS (menos tokens = menos espera en CPU)
 
     # --- Embeddings multilingües (384-d), horneados en la imagen app ---
     embed_model: str = "paraphrase-multilingual-MiniLM-L12-v2"  # EMBED_MODEL

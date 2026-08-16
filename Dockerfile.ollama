@@ -7,7 +7,7 @@ ENV OLLAMA_HOST=0.0.0.0:11434
 
 # Hornear el modelo: arranca el server en background, espera a que responda y hace el pull;
 # el blob queda persistido en /root/.ollama y se commitea en la capa de la imagen.
-ARG LLM_MODEL=qwen2.5:1.5b-instruct
+ARG LLM_MODEL=qwen2.5:0.5b-instruct
 RUN ollama serve & \
     until ollama list >/dev/null 2>&1; do sleep 1; done \
     && ollama pull "${LLM_MODEL}"

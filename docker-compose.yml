@@ -41,7 +41,7 @@ services:
     environment:
       DB_DSN: postgresql://rag:rag@db:5432/rag
       OLLAMA_HOST: http://ollama:11434
-      LLM_MODEL: qwen2.5:1.5b-instruct
+      LLM_MODEL: qwen2.5:0.5b-instruct
     depends_on:
       db:
         condition: service_healthy
