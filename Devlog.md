@@ -479,3 +479,40 @@ levers efectivos son de mi lado (imagen/app).** Aplicados:
 
 **Siguiente:** republicar `rag-demo-ollama:latest` (build-images) con 0.5B horneado → avisar a la
 infra el tag/modelo para que ajuste `LLM_MODEL` en el bicep y re-optimice el split 2/4.
+
+---
+
+## 2026-08-16 — Fix RAG: preguntas "meta" del blog (resumen sintético en la ingesta)
+
+**Síntoma (demo en vivo):** «¿De qué temas habla el blog de Alexis?» → rehúso grounded
+(«Solo puedo responder preguntas sobre los posts…»). Pregunta trivial que debería contestarse.
+
+**Causa raíz:** ningún chunk **real** resume el corpus — cada chunk es un fragmento de un post
+concreto. Una pregunta meta no se parece lo suficiente a ningún fragmento → todos caen bajo el
+umbral `SIMILARITY_THRESHOLD=0.32` → `retrieve()` devuelve `[]` → `main.py` rehúsa sin llamar al
+LLM. No es un bug del umbral (bajarlo rompería el grounding), sino una **laguna del corpus**.
+
+**Fix (build-time, como intuyó el dueño):** nuevo `ingest/overview.py` que genera, por idioma
+presente, un `Post` **sintético de resumen** cuyo texto enumera los **títulos** de los posts (que
+*son* los temas) con encuadre explícito + sinónimos (topics/subjects/areas · temas/asuntos/áreas)
+para maximizar recall. Fluye por el pipeline normal (chunk → embed → dump/snapshot), así que se
+recupera como cualquier chunk y el LLM responde fundamentado. La **cita** apunta al índice del blog
+(`/blog/` o `/es/blog/`, páginas reales). Cableado en `ingest/run.py` tras recolectar los posts.
+
+**Propiedades:**
+- **Determinista** (títulos ordenados por fecha desc, dedupe) → no ensucia el diff del
+  `refresh-corpus`; solo cambia al añadir/renombrar/eliminar posts (justo cuando debe actualizarse).
+- **Bilingüe:** un resumen EN (títulos EN) y uno ES (títulos ES) → responde en el idioma y cita el
+  índice correcto. El resumen sintético también entra al `snapshot.jsonl` (consistencia chunk↔fuente).
+- **No contamina retrieval específico:** cada título es una oración diluida en el vector del
+  resumen; una consulta concreta (p.ej. «activation functions») sigue rankeando más alto los chunks
+  reales y densos del post.
+
+**Validación:** ruff limpio + **48 tests** (6 nuevos en `tests/test_overview.py`, sin torch).
+Smoke offline: el `Post` sintético trocea a 1 chunk/idioma, orden más-reciente-primero correcto.
+
+**Para publicar al demo (acción del dueño):** regenerar el corpus para que `dump.sql` incluya los
+chunks de resumen. Recomendado: (1) validar local en la NUC (`python -m ingest.run` → `docker
+compose up` → probar la pregunta meta), luego (2) commit del código + merge a `main`, y (3) un clic
+en **refresh-corpus** (`workflow_dispatch`) → regenera `dump.sql` con el resumen → rebuild de
+`rag-demo-db:latest` → el próximo demo provisionado ya contesta las preguntas meta.
