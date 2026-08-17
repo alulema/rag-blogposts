@@ -17,7 +17,7 @@ if __package__ in (None, ""):  # permite también `python ingest/run.py`
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import get_settings  # noqa: E402
-from ingest import chunk, clean, dump, fetch  # noqa: E402
+from ingest import chunk, clean, dump, fetch, overview  # noqa: E402
 from ingest.tokens import get_token_counter  # noqa: E402
 
 _SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
@@ -64,6 +64,17 @@ def main(argv: list[str] | None = None) -> None:
         chunks.extend(post_chunks)
         pub = post.published.isoformat() if post.published else "----------"
         print(f"  {post.lang} {pub} {len(post_chunks):2d} chunks  {post.title[:58]}")
+
+    # Resumen sintético del blog (uno por idioma): permite responder preguntas meta como
+    # "¿de qué temas habla el blog?" que ningún chunk real cubre. Se calcula sobre los posts
+    # ya recolectados y fluye por el mismo pipeline (chunk → embed → dump/snapshot).
+    for op in overview.build_overview_posts(posts):
+        op_chunks = chunk.chunk_post(
+            op, count_tokens, settings.chunk_tokens, settings.chunk_overlap
+        )
+        chunks.extend(op_chunks)
+        posts.append(op)
+        print(f"  {op.lang} ---------- {len(op_chunks):2d} chunks  {op.title[:58]} (resumen)")
     print(f"total chunks: {len(chunks)}")
 
     if args.dry_run:
