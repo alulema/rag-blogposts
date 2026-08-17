@@ -576,3 +576,8 @@ ruff limpio + **48 tests** (sin asserts de valor sobre `chunk_tokens`).
 **Siguiente (dueño, en la NUC):** re-ingesta 400 → recalibrar → commitear `config`+`.env.example`+
 `db/dump.sql`+`db/snapshot.jsonl`(+umbral si cambió)+`Devlog` → PR a `main` → refresh-corpus/build
 publican `db`+`app` → **pedir demo nuevo a la infra y re-medir TTFT (frío + repetido)**.
+
+**Resultado calibración (2026-08-17, corpus 400-token): separated:true**, in_min=0.425, out_max=0.356,
+gap=0.069 → **umbral 0.32→0.39**. A 400 tokens el out_max subió (0.20→0.356) y el hueco se estrechó
+(0.23→0.069) vs 600 → grounding con menos margen; si en vivo se cuela algo off-topic, subir umbral o
+chunck size.
