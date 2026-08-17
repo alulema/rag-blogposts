@@ -4,6 +4,12 @@ El contenido vive en ``<div class="post-content prose">``; ``<header class="post
 ``<footer class="post-footer">`` son metadatos/navegación. Dentro del contenido se limpian:
 un **Table of Contents** (heading + lista de anclas ``#``) y **ligaduras de iconos** de Material
 Symbols (p.ej. el texto suelto ``beenhere``), además de glifos del área de uso privado (PUA).
+
+El header también trae ``<div class="post-tags"><span class="badge">…</span></div>``: los tags
+que el autor curó a mano al publicar (p.ej. ``python``, ``transformers``). Se extraen a
+``Post.tags`` — no van al cuerpo del chunk, pero alimentan el resumen sintético del blog (ver
+``ingest/overview.py``): la fuente de verdad de "de qué trata" cada post, más confiable que
+adivinarlo por keywords del texto.
 """
 
 from __future__ import annotations
@@ -66,6 +72,7 @@ class Post:
     lang: str
     published: date | None
     text: str
+    tags: tuple[str, ...] = ()
 
 
 def _strip_pua(s: str) -> str:
@@ -94,6 +101,21 @@ def _published(article: Tag | None) -> date | None:
         return datetime.fromisoformat(iso.replace("Z", "+00:00")).date()
     except ValueError:
         return None
+
+
+def _tags(article: Tag | None) -> tuple[str, ...]:
+    """Tags del post (``<div class="post-tags"><span class="badge">…</span></div>``), en el
+    header — curados a mano por el autor al publicar. No confundir con keywords extraídas: son
+    la fuente de verdad de "de qué trata" cada post (ver ``ingest/overview.py``)."""
+    box = article.select_one(".post-tags") if article else None
+    if not box:
+        return ()
+    out: list[str] = []
+    for badge in box.select(".badge"):
+        t = _strip_pua(badge.get_text(strip=True)).strip().lower()
+        if t:
+            out.append(t)
+    return tuple(out)
 
 
 def _lang(url: str, soup: BeautifulSoup) -> str:
@@ -155,6 +177,7 @@ def extract_post(html: str, url: str) -> Post:
     title = _title(soup, article)
     published = _published(article)
     lang = _lang(url, soup)
+    tags = _tags(article)
 
     content: Tag | None = None
     for sel in CONTENT_SELECTORS:
@@ -173,4 +196,6 @@ def extract_post(html: str, url: str) -> Post:
     _remove_icons(content)
     _remove_toc(content)
 
-    return Post(url=url, title=title, lang=lang, published=published, text=_body_text(content))
+    return Post(
+        url=url, title=title, lang=lang, published=published, text=_body_text(content), tags=tags
+    )
