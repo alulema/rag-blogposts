@@ -39,10 +39,11 @@ class Settings(BaseSettings):
 
     # --- Retrieval RAG ---
     top_k: int = 3  # TOP_K (3 recorta el prefill/TTFT en CPU; era 5 — ver Devlog 2026-08-16)
-    similarity_threshold: float = 0.32  # SIMILARITY_THRESHOLD (grounded-only; calibrado 2026-08-12)
+    # Umbral grounded (top-1). Recalibrar con tools/calibrate_threshold tras CHUNK_TOKENS=400.
+    similarity_threshold: float = 0.32  # SIMILARITY_THRESHOLD (calibrado 2026-08-12 a 600 tokens)
 
     # --- Ingesta (build-time): chunking ---
-    chunk_tokens: int = 600  # CHUNK_TOKENS
+    chunk_tokens: int = 400  # CHUNK_TOKENS (era 600; ↓ prefill/TTFT — recalibrar umbral)
     chunk_overlap: int = 80  # CHUNK_OVERLAP
 
 
