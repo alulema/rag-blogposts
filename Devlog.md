@@ -627,3 +627,47 @@ en vivo; si aparecen, subir el umbral o el chunk size.
 - El dump/ingesta se generan **en la NUC** (torch); commitear esos artefactos desde ahí. El código puede
   commitearse desde el git-gate (WSL).
 - Nit cosmético pendiente: el comentario de `chunk_tokens` en `app/config.py` aún dice "recalibrar umbral".
+
+---
+
+## 2026-08-17 — Perf III medido en vivo: fuga React/Vue, umbral 0.39→0.42
+
+La infra provisionó el demo con Perf III y midió: **TTFT frío ~5.7 s** de media (2.5/6.2/8.3 s),
+gen ~30-31 tok/s — cumple el estimado ~6-7 s, baja ~44% vs Perf II. **Perf III se queda.** Pero de
+9 preguntas fuera de corpus probadas en vivo, 2 se colaron: `useState`/`useEffect` de React
+generaron respuesta real (256 tok) en vez de rehusar. Kubernetes, Vue, Angular, Tailwind, JSX
+rehusaron bien en esa prueba. Smoking gun: `useEffect` recuperó un chunk irrelevante de
+"Funciones de Activación en TensorFlow" que apenas pasó 0.39.
+
+**Verificación local (NUC, esta sesión):** antes de tocar el umbral, sembré un pgvector desechable
+con la imagen `rag-demo-db:latest` real (278 chunks, la misma que probó la infra — hubo que
+`docker pull` porque la cache local estaba 2 días vieja) y reproduje el retrieval directo. La
+batería `OUT_CORPUS` de `tools/calibrate_threshold.py` no tenía ningún negativo "cercano"
+(frameworks frontend ausentes del blog) — solo temas obviamente ajenos (Francia, pizza, Taylor
+Swift) — así que la calibración original nunca vio venir esta fuga. Al agregar sondas de
+React/Vue/Angular/Tailwind/JSX/Kubernetes:
+
+- **Vue.js composition API sola pega top1=0.492** — por encima de todo el rango 0.42–0.44 que
+  pidió la infra; subir ahí no la cierra.
+- React `useState`=0.475, `useEffect`=0.458, hooks=0.388, JSX=0.336.
+- El piso in-corpus real es la pregunta de **Levenshtein en JavaScript, top1=0.425** — por
+  *debajo* de Vue. **No hay separación limpia posible**: es solape real de embeddings a 400
+  tokens entre un post JS/algoritmos legítimo y frameworks frontend adyacentes, no un umbral mal
+  puesto.
+
+**Nota sobre la recomendación automática del harness:** con la batería endurecida, `calibrate_threshold`
+recomienda por accuracy **0.577** (12/14 in-corpus + 15/15 out-corpus correctos) — pero eso rehusaría
+"How do transformers work internally?" (0.572), el tema más central del blog. Se descarta esa
+recomendación a propósito: maximizar accuracy del harness no es el objetivo si el costo es un tema
+core.
+
+**Decisión (dueño):** preservar Levenshtein/JS respondible > cerrar la fuga de frameworks
+adyacentes. **`SIMILARITY_THRESHOLD` 0.39→0.42** (aprieta el margen contra negativos no probados
+sin refusar ningún tema real del corpus; el piso sigue en 0.425). React/Vue/Angular/Kubernetes
+quedan como **fuga conocida y aceptada**, no un bug pendiente. Harness actualizado: `OUT_CORPUS`
+en `tools/calibrate_threshold.py` ahora incluye esos negativos "cercanos" para que una futura
+recalibración (otro modelo de embeddings, otro chunk size) no repita el punto ciego.
+
+**Siguiente:** republicar (`build-images` en merge a `main`) y pedir a la infra reconfirmar las 2
+preguntas de React (documentar la fuga como aceptada, no reabrir) + que las on-topic sigan
+respondiendo.

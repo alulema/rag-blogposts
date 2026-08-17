@@ -56,6 +56,17 @@ OUT_CORPUS: list[str] = [
     "¿Cuál es la mejor receta de ceviche?",
     "Who is Taylor Swift?",
     "What will the weather be tomorrow in Quito?",
+    # Negativos "cercanos": frameworks/stacks frontend ausentes del blog. Añadidos 2026-08-17 tras
+    # una fuga en producción (React useState/useEffect, top1 0.458-0.492) que la batería genérica
+    # de arriba no detectaba — esos temas comparten vocabulario técnico con posts reales de JS/ML.
+    "How does useState work in React?",
+    "What is useEffect in React?",
+    "How do React hooks work?",
+    "What is JSX in React?",
+    "What is Vue.js composition API?",
+    "How does Angular dependency injection work?",
+    "How do I configure Tailwind CSS?",
+    "How do I set up a Kubernetes cluster?",
 ]
 
 _SCORE_SQL = """
