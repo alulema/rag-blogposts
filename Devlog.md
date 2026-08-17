@@ -581,3 +581,49 @@ publican `db`+`app` → **pedir demo nuevo a la infra y re-medir TTFT (frío + r
 gap=0.069 → **umbral 0.32→0.39**. A 400 tokens el out_max subió (0.20→0.356) y el hueco se estrechó
 (0.23→0.069) vs 600 → grounding con menos margen; si en vivo se cuela algo off-topic, subir umbral o
 chunck size.
+
+---
+
+## 2026-08-17 — Handoff a Claude Code (NUC): nota de continuidad
+
+Nota puente para retomar el proyecto desde **Claude Code en la NUC** (u otra instancia/sesión). El
+contexto completo vive en este Devlog + `CLAUDE.md` (plan), `DEMO_INTEGRATION.md` (contrato infra) y
+`HANDOFF.md` (manifest de provisión). Esto es el resumen operativo.
+
+### Estado actual (desplegado en GHCR)
+Cadena de performance **cerrada**: **Perf I** (LLM `qwen2.5:0.5b-instruct`, `MAX_OUTPUT_TOKENS=256`) ·
+**Perf II** (`TOP_K=3`; TTFT ~17.6→~10.1 s medido por la infra) · **Perf III** (`CHUNK_TOKENS=400`,
+`SIMILARITY_THRESHOLD=0.39`, dump de **278 chunks** 400-token). `build-images` republica
+`rag-demo-{app,ollama,db}:latest` en cada merge a `main`. **Pendiente:** la infra provisiona un demo y
+re-mide el TTFT (estimado ~6–7 s).
+
+### Convenciones (respetarlas aunque el agente tienda a lo contrario)
+- **NUNCA auto-commitear.** Preparar los comandos git para que el dueño los corra (identidad personal).
+  Trailer en cada commit: `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`.
+- Una rama por concern; refactors separados de cambios de comportamiento. Repo público → **sin secretos**.
+- Mantener **este Devlog** al día en cada cambio.
+- `CLAUDE.md` es doc "fijado": no cambiar stack/modelos sin consultar. Sus defaults ya divergen del código
+  (modelo 0.5B, top_k=3, chunk=400) → un commit de *doc-sync* queda a criterio del dueño.
+
+### Topología de máquinas (clave)
+- **NUC (Linux nativo):** máquina de **procesamiento** — docker, torch, pgvector, ingesta, embeddings,
+  calibración. Deps ya instaladas (venv `rag-ingest` + `psycopg`). Git limpio, **sin CRLF**.
+- **Windows/WSL (`/mnt/c`):** clon de autoría/git-gate; sufre **CRLF thrash** (`core.autocrlf=true`) →
+  `git status` marca decenas de archivos ` M` sin cambio real (verificar con `git diff --ignore-cr-at-eol`).
+  Pendiente opcional: `.gitattributes` (`* text=auto eol=lf`) + `git add --renormalize .` para cerrarlo.
+
+### Recalibrar el umbral (al cambiar chunk / embeddings / corpus)
+Sembrar un pgvector desechable con `db/dump.sql` y correr `python -m tools.calibrate_threshold --json`
+(top-1, independiente de `TOP_K`). Fijar el `threshold` impreso; si `separated:false`, **no publicar**.
+**Ojo:** a 400 tokens el margen de grounding es fino (gap 0.069, out_max 0.356) → vigilar fugas off-topic
+en vivo; si aparecen, subir el umbral o el chunk size.
+
+### Gotchas capturados esta sesión
+- `ingest.run` y `calibrate_threshold` necesitan `requirements-ingest.txt` **+ `psycopg[binary]`** (este
+  último NO está en ese archivo; vive en `requirements.txt`).
+- Cambiar `SIMILARITY_THRESHOLD` obliga a actualizar `tests/test_config.py` (`test_defaults` asserta el valor).
+- Cambiar el modelo de embeddings ⇒ re-ingesta + re-calibración + revisar el cap de 128 tokens (mean-pooling
+  en `ingest/embed.py`).
+- El dump/ingesta se generan **en la NUC** (torch); commitear esos artefactos desde ahí. El código puede
+  commitearse desde el git-gate (WSL).
+- Nit cosmético pendiente: el comentario de `chunk_tokens` en `app/config.py` aún dice "recalibrar umbral".
