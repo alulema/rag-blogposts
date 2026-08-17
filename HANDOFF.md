@@ -70,7 +70,7 @@ a `ollama` (~1.5 vCPU). Con el modelo **0.5B** el footprint baja y entra cómodo
 
 `LLM_MODEL` (default **`qwen2.5:0.5b-instruct`**, elegido por velocidad en CPU; `qwen2.5:1.5b-instruct`
 o `7b-instruct` dan más calidad pero requieren hornear ese modelo en la imagen `ollama` y más
-RAM/CPU) · `TOP_K` (default 5) · `SIMILARITY_THRESHOLD` (default 0.32, calibrado) · `MAX_OUTPUT_TOKENS`
+RAM/CPU) · `TOP_K` (default 3, recorta el prefill/TTFT en CPU) · `SIMILARITY_THRESHOLD` (default 0.32, calibrado) · `MAX_OUTPUT_TOKENS`
 (default 256) · `PROJECT_ID` / `DEMO_SLOT` (informativos).
 
 ## Checklist de provisión (infra)
