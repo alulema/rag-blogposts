@@ -516,3 +516,33 @@ chunks de resumen. Recomendado: (1) validar local en la NUC (`python -m ingest.r
 compose up` → probar la pregunta meta), luego (2) commit del código + merge a `main`, y (3) un clic
 en **refresh-corpus** (`workflow_dispatch`) → regenera `dump.sql` con el resumen → rebuild de
 `rag-demo-db:latest` → el próximo demo provisionado ya contesta las preguntas meta.
+
+---
+
+## 2026-08-16 — Perf II: `TOP_K` 5→3 (recorta TTFT; prefill del prompt RAG en CPU)
+
+**Medición de la infra en el nodo real (demo01), 0.5B:** generación ✅ **~25 tok/s** (el ~3× de la
+Perf I se cumplió), **pero** el nuevo cuello es el **TTFT ~14–21 s** = *prefill* del prompt RAG en
+CPU (confirmado en caliente, con el modelo ya cargado). `ollama` ya está al tope del split de CPU
+(1.5/2 vCPU) en ACA Consumption → el lever no es más CPU, sino **prompt más corto**.
+
+**Aplicado (lever primario, solo app/runtime):** `TOP_K` **5 → 3**. El contexto recuperado es la
+parte grande y variable del prompt; con 3 chunks (en vez de 5) el prefill baja ~40 % → **TTFT ~½**.
+Bajo riesgo: `SIMILARITY_THRESHOLD=0.32` sigue filtrando el grounding, las citas dedupean por URL
+(2–3 fuentes basta), y el resumen meta (1 chunk) sigue siendo top-hit. Solo toca `app/config.py`
+(default), `.env.example`, `tests/test_config.py`, `HANDOFF.md`. Se publica al reconstruir la
+imagen `app` (build-images en push a `main`); la infra usa defaults (no hace falta env override).
+
+**NO bundleado (siguiente lever, si TOP_K no basta): `CHUNK_TOKENS` 600→~400.** Es lado-ingesta:
+requiere **re-ingesta** (regenera `dump.sql`) y **recalibrar** el umbral (el 0.32 se calibró a 600
+tokens; chunks más chicos cambian la densidad de similitud). Mezclarlo con TOP_K enturbiaría la
+atribución del TTFT y cualquier regresión de calidad. Plan si se necesita: bajar `CHUNK_TOKENS` en
+`app/config.py` + `.env.example` → `python -m ingest.run` en la NUC → `python -m
+tools.calibrate_threshold` para confirmar/ajustar el umbral → `refresh-corpus` (rebuild `db`).
+
+**Sin tocar:** `MAX_OUTPUT_TOKENS=256` y la generación (están bien, dice la infra). `CLAUDE.md` NO
+se toca (doc "fijado"; su tabla dice k=5 — cambio de default a criterio del dueño, igual que con el
+modelo en Perf I). **Validación:** ruff limpio + **48 tests** (ajustado `test_defaults`).
+
+**Siguiente:** publicar imagen `app` con `TOP_K=3` → avisar a la infra para **re-medir TTFT**; si
+sigue alto, activar el lever `CHUNK_TOKENS` con recalibración.

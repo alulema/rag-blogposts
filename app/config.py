@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     db_dsn: str = "postgresql://rag:rag@localhost:5432/rag"  # DB_DSN
 
     # --- Retrieval RAG ---
-    top_k: int = 5  # TOP_K
+    top_k: int = 3  # TOP_K (3 recorta el prefill/TTFT en CPU; era 5 — ver Devlog 2026-08-16)
     similarity_threshold: float = 0.32  # SIMILARITY_THRESHOLD (grounded-only; calibrado 2026-08-12)
 
     # --- Ingesta (build-time): chunking ---
