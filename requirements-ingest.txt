@@ -16,3 +16,7 @@ lxml>=5.2
 # Embeddings (mismo modelo que la app). Trae torch (CPU) + tokenizer HF para contar tokens.
 sentence-transformers>=3.0
 numpy>=1.26
+
+# Sembrar/consultar el pgvector desechable de calibración (tools/calibrate_threshold.py).
+# Mismo pin que requirements.txt para evitar drift.
+psycopg[binary,pool]>=3.2

@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     similarity_threshold: float = 0.39  # SIMILARITY_THRESHOLD (recalibrado a 400 tokens)
 
     # --- Ingesta (build-time): chunking ---
-    chunk_tokens: int = 400  # CHUNK_TOKENS (era 600; ↓ prefill/TTFT — recalibrar umbral)
+    chunk_tokens: int = 400  # CHUNK_TOKENS (era 600; ↓ prefill/TTFT — umbral recalibrado)
     chunk_overlap: int = 80  # CHUNK_OVERLAP
 
 
