@@ -39,8 +39,11 @@ class Settings(BaseSettings):
 
     # --- Retrieval RAG ---
     top_k: int = 3  # TOP_K (3 recorta el prefill/TTFT en CPU; era 5 — ver Devlog 2026-08-16)
-    # Umbral grounded (top-1). Recalibrado 2026-08-17 a CHUNK_TOKENS=400 (out_max subió vs 600).
-    similarity_threshold: float = 0.39  # SIMILARITY_THRESHOLD (recalibrado a 400 tokens)
+    # Umbral grounded (top-1). 0.39->0.42 (2026-08-17): fuga real de React/Vue en producción (top1
+    # 0.458-0.492) supera el piso in-corpus (Levenshtein/JS 0.425) — sin separación limpia posible.
+    # Decisión: 0.42 aprieta el margen sin refusar ningún tema real; React/Vue quedan aceptados
+    # como fuga conocida (no hay umbral que los cierre sin sacrificar Levenshtein). Ver Devlog.
+    similarity_threshold: float = 0.42  # SIMILARITY_THRESHOLD
 
     # --- Ingesta (build-time): chunking ---
     chunk_tokens: int = 400  # CHUNK_TOKENS (era 600; ↓ prefill/TTFT — umbral recalibrado)
