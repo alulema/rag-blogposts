@@ -546,3 +546,33 @@ modelo en Perf I). **Validación:** ruff limpio + **48 tests** (ajustado `test_d
 
 **Siguiente:** publicar imagen `app` con `TOP_K=3` → avisar a la infra para **re-medir TTFT**; si
 sigue alto, activar el lever `CHUNK_TOKENS` con recalibración.
+
+---
+
+## 2026-08-17 — Perf III: `CHUNK_TOKENS` 600→400 (+ recalibración del umbral)
+
+**Medición de la infra con `TOP_K=3` (nodo real, prompts nuevos = usuario real):** **TTFT ~9–11 s**
+(prom 10.1), **−40 %** desde ~17.6 s con `TOP_K=5`, y consistente. Generación ~28 tok/s ✅. (Nota:
+repetir la MISMA pregunta da ~1 s por el KV cache de ollama; el número real se mide con preguntas
+nuevas/frías.) ~10 s aún se siente lento → la infra pidió activar **Perf III**.
+
+**Aplicado (lado ingesta):** `CHUNK_TOKENS` **600 → 400**. Menos tokens por chunk → con `TOP_K=3`
+el prompt baja de ~1800 a ~1200 tokens → **TTFT estimado ~6–7 s**. Toca `app/config.py` (default) y
+`.env.example`. `CHUNK_OVERLAP` se deja en 80 (una sola variable de ingesta cambia → medición limpia).
+
+**Recalibración del umbral (obligatoria, no bundleable en autoría):** el `SIMILARITY_THRESHOLD=0.32`
+se calibró a 600 tokens; chunks más chicos cambian la densidad de similitud (in-corpus tiende a
+*subir* al estar más focalizado). El valor óptimo depende de los embeddings del corpus re-troceado,
+que **solo se generan en la NUC** (torch). Flujo: re-ingesta a 400 → sembrar pgvector local →
+`python -m tools.calibrate_threshold --json` (top-1, independiente de `TOP_K`) → fija el umbral que
+imprime (`separated:true` → punto medio del hueco; `separated:false` → hay solape, **no publicar**,
+revisar). Hasta esa medición dejo `0.32` como default seguro (sigue en medio del hueco de 600).
+
+**Sin tocar:** generación / `MAX_OUTPUT_TOKENS=256` (ok, dice la infra). `CLAUDE.md` NO se toca (doc
+"fijado"; su diseño dice ~600 tokens y k=5 — la divergencia de defaults se acumula: modelo, top-k y
+ahora chunk → conviene un commit de *doc-sync* del dueño cuando quiera). **Validación (autoría):**
+ruff limpio + **48 tests** (sin asserts de valor sobre `chunk_tokens`).
+
+**Siguiente (dueño, en la NUC):** re-ingesta 400 → recalibrar → commitear `config`+`.env.example`+
+`db/dump.sql`+`db/snapshot.jsonl`(+umbral si cambió)+`Devlog` → PR a `main` → refresh-corpus/build
+publican `db`+`app` → **pedir demo nuevo a la infra y re-medir TTFT (frío + repetido)**.
