@@ -671,3 +671,43 @@ recalibración (otro modelo de embeddings, otro chunk size) no repita el punto c
 **Siguiente:** republicar (`build-images` en merge a `main`) y pedir a la infra reconfirmar las 2
 preguntas de React (documentar la fuga como aceptada, no reabrir) + que las on-topic sigan
 respondiendo.
+
+---
+
+## 2026-08-17 — Resumen del blog: de títulos a tags reales + chip de UI
+
+Idea del dueño: sugerir en la UI, desde el arranque del chat, la pregunta "¿cuáles son los temas
+que trata el blog de Alexis?" — no solo por descubribilidad, sino como mitigación de producto al
+mismo problema que veníamos persiguiendo con umbral/gate léxico (React/Vue): si el chat le muestra
+al usuario el alcance real desde el primer segundo, hay menos incentivo a preguntar fuera de tema.
+
+El resumen sintético (`ingest/overview.py`, desde 2026-08-16) respondía esa pregunta enumerando
+**títulos** de posts ("Alexis Alulema escribe sobre «DDD Clean Architecture Template»."). Un
+título no siempre dice la tecnología (ese post es sobre C#/DDD/CQRS, no lo dice el título). Antes
+de inventar extracción de keywords, se inspeccionó el HTML real del sitio: cada post ya trae
+`<div class="post-tags"><span class="badge">…</span></div>` — tags curados a mano por el autor al
+publicar (`machine-learning`, `python`, `transformers`, `c#`, `cqrs`, `ddd`...), que
+`ingest/clean.py` nunca scrapeaba. Es mejor fuente que cualquier heurística: metadata real, no
+inferida.
+
+**Cambios:**
+- `ingest/clean.py`: `Post` gana `tags: tuple[str, ...]`, scrapeado de `.post-tags .badge` (fuera
+  de `.post-content`, no contamina el cuerpo del chunk).
+- `ingest/overview.py`: el resumen ahora enumera el **set de tags únicos** por idioma (orden
+  alfabético — determinista, no depende de fechas ni del orden de fetch) en vez de títulos. Un
+  post sin tags simplemente no aporta; si un idioma no tiene ningún tag, no se genera resumen para
+  ese idioma (mismo fallback que antes).
+- Re-ingesta real (NUC, 34 posts): confirma que **todo** el corpus actual trae tags. `dump.sql`
+  regenerado — diff mínimo: solo las 3 líneas del resumen cambian, los 275 chunks reales quedan
+  byte-idénticos (embeddings determinísticos, nada más tocó su contenido).
+- Validado contra pgvector real: "¿Cuáles son los temas que trata el blog de Alexis?" recupera el
+  resumen con top1=0.694 (holgado sobre el umbral 0.42); variantes EN también pasan (0.446-0.465).
+  Recalibración completa (`tools/calibrate_threshold.py`, batería endurecida) da los mismos
+  números que antes (in_min=0.425, out_max=0.492) — el cambio no afecta el resto del corpus.
+- `app/static/index.html`: nuevo chip de sugerencia ("What topics does this blog cover?", en
+  inglés — la formulación que se validó contra pgvector, top1=0.465), primero en la lista;
+  se retira el chip de asyncio para dejar espacio. Sin cambios en `app.js` (el handler de `.chip`
+  ya es genérico).
+- Tests: `tests/test_clean.py` (tags extraídos, lowercased, fuera del cuerpo, ausentes sin
+  romper) y `tests/test_overview.py` reescrito para tags (alfabético, dedupe case-insensitive,
+  posts sin tags no aportan, fallback sin resumen si no hay tags). 53 tests + ruff limpios.

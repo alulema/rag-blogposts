@@ -23,7 +23,9 @@ _HTML = """
       </div>
       <h1 class="post-title">Sample Post</h1>
       <p class="post-description"><em>beenhere</em>Update summary</p>
-      <div class="post-tags">python machine-learning</div>
+      <div class="post-tags">
+        <span class="badge">Python</span><span class="badge">machine-learning</span>
+      </div>
     </header>
     <div class="post-content prose">
       <p><em>beenhere</em></p>
@@ -93,3 +95,22 @@ def test_katex_mathml_deduplicated():
 
 def test_nbsp_normalized():
     assert "Softplus is smooth." in _post().text  # &nbsp; -> espacio normal
+
+
+def test_tags_extracted_lowercased_in_order():
+    assert _post().tags == ("python", "machine-learning")  # "Python" -> "python"
+
+
+def test_tags_not_in_body():
+    text = _post().text
+    assert "python" not in text.lower()
+    assert "machine-learning" not in text.lower()
+
+
+def test_no_tags_div_yields_empty_tuple():
+    html_no_tags = _HTML.replace(
+        '<div class="post-tags">\n        <span class="badge">Python</span>'
+        '<span class="badge">machine-learning</span>\n      </div>',
+        "",
+    )
+    assert extract_post(html_no_tags, "https://alexisalulema.com/blog/sample/").tags == ()
