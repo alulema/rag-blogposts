@@ -883,3 +883,62 @@ NUC antes de publicar.
 **Validación:** ruff limpio + **73 tests**. **Pendiente (NUC):** medir latencia real del camino
 "sin contexto" ahora que pasa por el LLM, y probar a mano que la redirección se siente natural
 (no repetitiva) con preguntas variadas fuera de tema.
+
+---
+
+## 2026-08-20 — Opción B revertida: el LLM 0.5B ignora "no uses conocimiento externo" (probado en vivo)
+
+**Antes de mergear a `main`**, se levantó el stack completo con `docker compose up --build` (app +
+ollama + db, en esta máquina — Docker/Postgres disponibles aquí) para probar a mano las dos ramas
+pendientes (`fix/detect-lang-greeting-llm-warmup` y `feat/greeting-response`). Primer resultado
+bueno: **el warm-up de Ollama de la sesión anterior funciona** — log confirmado, `POST
+/api/generate` cargó el modelo (1.06 s) **antes** de que `/healthz` reportara `ok`.
+
+**Pero la Opción B (redirección con LLM) falló en vivo, de forma reproducible y seria:**
+
+| Pregunta (fuera de corpus, `SOURCES: []`) | Respuesta del LLM |
+|---|---|
+| "¿Cuál es la capital de Francia?" | **"La capital de Francia es París."** |
+| "¿Cuál es la mejor pizza del mundo?" | Inventó una respuesta sobre "Pizzas al Loto" |
+| "¿Quién ganó el mundial 2022?" | **"...ganó Brasil"** (ganó Argentina — dato real, incorrecto) |
+
+El `_no_context_system_prompt` le decía explícitamente "NO uses conocimiento externo para
+intentar responder la pregunta original", pero **Qwen2.5-0.5B ignora instrucciones negativas**
+cuando la pregunta le resulta "conocida" — un problema documentado de modelos instruct pequeños
+(malos siguiendo restricciones tipo "no hagas X", especialmente ante preguntas directas). El
+resultado es **peor que el rehúso enlatado que se quería mejorar**: antes el bot nunca alucinaba
+fuera de tema; con Opción B, sí — y a veces con datos falsos presentados con confianza. Esto
+**rompe grounded-only**, una restricción dura del proyecto (`CLAUDE.md`).
+
+*(Nota aparte, sin relación con Opción B: "¿Cómo funciona React?" cayó en la fuga conocida de
+React/Vue del umbral — documentada y aceptada desde el 2026-08-17, no es un hallazgo nuevo.)*
+
+**Decisión (con el dueño, tres opciones evaluadas):** revertir a una versión mejorada de la
+Opción A — determinística, sin LLM, pero más amable que el rehúso original. Se descartaron (1)
+Opción B con red de seguridad post-hoc (heurística, no elimina el riesgo del todo) y (2) probar
+con un modelo más grande solo para este camino (más latencia + segundo modelo horneado — cambio
+de arquitectura mayor para un problema que la Opción A resuelve sin riesgo).
+
+**Revert aplicado:**
+- `app.rag.no_context_response(lang)` reemplaza el intento con LLM: mensaje determinístico que
+  reconoce la limitación + sugiere temas reales del blog (reutiliza `_BLOG_TOPICS`), más cálido
+  que `refusal_message` pero **sin ningún riesgo de alucinación** — nunca varía, nunca inventa.
+- Se eliminaron `_no_context_system_prompt`, `build_no_context_messages` y `NO_CONTEXT_MAX_TOKENS`
+  (código del intento fallido).
+- `app.ollama_client.OllamaClient.stream_chat()` vuelve a su firma original (se retira el
+  `max_tokens` opcional, sin uso tras el revert).
+- `app.main.chat()`: el camino "sin contexto" vuelve a ser sin LLM (streaming palabra por
+  palabra de `no_context_response`, como el rehúso original); el camino grounded no cambia.
+- `_REFUSAL`/`refusal_message` se mantienen (piezas puras testeadas, sin uso actual en `main.py`).
+
+**Validación (esta sesión, en vivo contra el stack real):** las 3 preguntas de la tabla ya NO
+alucinan — responden con `no_context_response`, determinístico. Reconfirmados sin regresión:
+saludo ES/EN (`greeting_response`) y pregunta grounded normal (cita ambos posts EN+ES). Suite:
+ruff limpio + **72 tests** (ajustados los de `test_api.py`/`test_rag.py` al comportamiento
+determinístico; los del intento con LLM se reescribieron o eliminaron).
+
+**Lección para el Devlog:** un demo con LLM local pequeño (0.5B, CPU-only) no puede confiar en
+prompts negativos ("no hagas X") para garantías duras como grounded-only — esas garantías deben
+vivir en código determinístico (aquí: no llamar al LLM en absoluto sin contexto), no en
+instrucciones que el modelo puede ignorar. Vale la pena tenerlo presente para cualquier feature
+futura que dependa de que el LLM "se abstenga" de algo.

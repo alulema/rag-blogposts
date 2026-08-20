@@ -27,46 +27,13 @@ _REFUSAL = {
     "en": "I can only answer questions about Alexis Alulema's blog posts.",
 }
 
-# Temas reales del blog (subset representativo, ver ingest/overview.py para la lista completa
-# de tags). Se inyectan en el prompt "sin contexto" para que la sugerencia del LLM sea concreta,
-# no genérica ("pregúntame sobre otra cosa").
+# Temas reales del blog (subset representativo, ver ingest/overview.py para la lista completa de
+# tags). Se inyectan en el mensaje "sin contexto" para que la sugerencia sea concreta, no genérica
+# ("pregúntame sobre otra cosa").
 _BLOG_TOPICS = {
     "es": ["RAG", "Python", "asyncio", "transformadores", "TensorFlow", "embeddings"],
     "en": ["RAG", "Python", "asyncio", "transformers", "TensorFlow", "embeddings"],
 }
-
-# Tokens de salida para la respuesta de redirección "sin contexto": es un mensaje corto (2-3
-# frases), no necesita el presupuesto completo de una respuesta grounded -- mantiene el TTFT/
-# tiempo total bajo para el caso más común de las preguntas fuera de tema (ver Perf II/III).
-NO_CONTEXT_MAX_TOKENS = 100
-
-
-def _no_context_system_prompt(lang: str) -> str:
-    topics = ", ".join(_BLOG_TOPICS.get(lang, _BLOG_TOPICS["en"]))
-    if lang == "es":
-        return (
-            "Eres el asistente del chatbot del blog de Alexis Alulema. La pregunta del usuario "
-            "NO se puede responder con el contenido del blog: no se encontró ningún fragmento "
-            "relevante para ella.\n"
-            "Reglas:\n"
-            "- Responde en español.\n"
-            "- NO uses conocimiento externo para intentar responder la pregunta original.\n"
-            "- Dile de forma amable y breve que no tienes esa información en los posts del blog.\n"
-            f"- Invita a preguntar sobre temas que el blog sí cubre, mencionando 2-3 ejemplos "
-            f"concretos de esta lista: {topics}.\n"
-            "- Sé cálido y conciso (2-3 frases), sin disculparte en exceso."
-        )
-    return (
-        "You are the assistant for Alexis Alulema's blog chatbot. The user's question CANNOT be "
-        "answered from the blog's content: no relevant fragment was found for it.\n"
-        "Rules:\n"
-        "- Reply in English.\n"
-        "- Do NOT use outside knowledge to try to answer the original question.\n"
-        "- Kindly and briefly say you don't have that information in the blog posts.\n"
-        f"- Invite the user to ask about topics the blog DOES cover, mentioning 2-3 concrete "
-        f"examples from this list: {topics}.\n"
-        "- Be warm and concise (2-3 sentences), without over-apologizing."
-    )
 
 
 _ES_CHARS = re.compile(r"[¿¡ñáéíóú]", re.IGNORECASE)
@@ -150,6 +117,30 @@ def refusal_message(lang: str) -> str:
     return _REFUSAL.get(lang, _REFUSAL["en"])
 
 
+def no_context_response(lang: str) -> str:
+    """Mensaje determinístico (sin LLM) para cuando el retrieval no encuentra contexto grounded.
+
+    Más amable que ``refusal_message`` (la misma frase seca siempre — reporte del dueño
+    2026-08-20): reconoce que no tiene esa información y sugiere temas reales del blog.
+    **Determinístico a propósito, no generado por el LLM** (a diferencia del intento anterior con
+    Ollama, revertido el mismo día): Qwen2.5-0.5B ignora instrucciones negativas ("no uses
+    conocimiento externo") cuando la pregunta le resulta "conocida" — probado en vivo, respondió
+    la capital de Francia y afirmó (incorrectamente) que Brasil ganó el Mundial 2022 en vez de
+    admitir que no tenía esa información. Grounded-only es una restricción dura del proyecto
+    (``CLAUDE.md``): mejor un mensaje sin variedad conversacional que uno que a veces alucina.
+    """
+    topics = ", ".join(_BLOG_TOPICS.get(lang, _BLOG_TOPICS["en"]))
+    if lang == "es":
+        return (
+            f"No tengo esa información en los posts del blog. Puedo ayudarte con temas como "
+            f"{topics}, entre otros — ¿qué te gustaría saber?"
+        )
+    return (
+        f"I don't have that information in the blog posts. I can help you with topics like "
+        f"{topics}, among others — what would you like to know?"
+    )
+
+
 def is_greeting(text: str) -> bool:
     """Detecta si el mensaje es un saludo puro (sin pregunta de fondo).
 
@@ -219,25 +210,6 @@ def build_messages(
     """Ensambla ``system(grounded + contexto) + historial + pregunta`` para Ollama."""
     system = f"{SYSTEM_PROMPT}\n\nContext:\n{format_context(chunks)}"
     messages = [{"role": "system", "content": system}]
-    for turn in history:
-        role, content = turn.get("role"), turn.get("content")
-        if role in ("user", "assistant") and content:
-            messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": question})
-    return messages
-
-
-def build_no_context_messages(question: str, history: Iterable[dict], lang: str) -> list[dict]:
-    """Ensambla mensajes para el LLM cuando el retrieval NO encontró contexto grounded.
-
-    A diferencia de ``build_messages``, no hay chunks que anexar: no hay material del blog para
-    esta pregunta. En vez del rehúso enlatado (respuesta idéntica siempre, sensación robótica —
-    reporte del dueño), se le pide al LLM que reconozca la limitación honestamente (sin usar
-    conocimiento externo para *responder* la pregunta original) e invite a preguntar sobre temas
-    reales del blog. Mismo shape que ``build_messages`` (system + historial + pregunta) para que
-    el LLM siga viendo la conversación completa.
-    """
-    messages = [{"role": "system", "content": _no_context_system_prompt(lang)}]
     for turn in history:
         role, content = turn.get("role"), turn.get("content")
         if role in ("user", "assistant") and content:

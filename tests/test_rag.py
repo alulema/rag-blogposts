@@ -73,29 +73,20 @@ def test_build_messages_structure():
     assert msgs[-1] == {"role": "user", "content": "current q"}
 
 
-def test_build_no_context_messages_structure():
-    history = [
-        {"role": "user", "content": "prev q"},
-        {"role": "assistant", "content": "prev a"},
-        {"role": "system", "content": "ignore"},  # debe filtrarse
-    ]
-    msgs = rag.build_no_context_messages("current q", history, "es")
-    assert msgs[0]["role"] == "system"
-    # No debe incluir "Context:" (no hay chunks) ni el rehúso enlatado literal.
-    assert "Context:" not in msgs[0]["content"]
-    assert msgs[0]["content"] != rag.refusal_message("es")
-    assert msgs[1] == {"role": "user", "content": "prev q"}
-    assert msgs[2] == {"role": "assistant", "content": "prev a"}
-    assert all(m["content"] != "ignore" for m in msgs)
-    assert msgs[-1] == {"role": "user", "content": "current q"}
+def test_no_context_response():
+    # Determinístico, sin LLM: reconoce la limitación + sugiere temas reales del blog. Se probó
+    # generar esto con el LLM (Opción B) pero se revirtió el mismo día -- Qwen2.5-0.5B ignoraba
+    # la instrucción "no uses conocimiento externo" y alucinaba respuestas fuera de tema (ver
+    # Devlog 2026-08-20). Nunca debe ser idéntico al rehúso seco de `refusal_message`.
+    msg_es = rag.no_context_response("es")
+    assert "No tengo esa información" in msg_es
+    assert "Python" in msg_es and "RAG" in msg_es
+    assert msg_es != rag.refusal_message("es")
 
-
-def test_build_no_context_messages_prompt_mentions_real_topics_by_lang():
-    system_es = rag.build_no_context_messages("q", [], "es")[0]["content"]
-    system_en = rag.build_no_context_messages("q", [], "en")[0]["content"]
-    assert "Python" in system_es and "RAG" in system_es
-    assert "Python" in system_en and "RAG" in system_en
-    assert system_es != system_en  # el idioma cambia el prompt, no solo la pregunta
+    msg_en = rag.no_context_response("en")
+    assert "I don't have that information" in msg_en
+    assert "Python" in msg_en and "RAG" in msg_en
+    assert msg_en != rag.refusal_message("en")
 
 
 def test_contextualize_query_prepends_prior_user_turn():
