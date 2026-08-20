@@ -752,3 +752,49 @@ retrieval nunca le da la oportunidad de usarlo.
   salta roles que no son `user`, no cambia nada sin historial) y `tests/test_api.py`
   (`_FakeContextualRetriever` — verifica que `main.chat` reintenta con la query contextualizada
   y que, si tampoco encuentra nada, rehúsa igual sin loops). 61 tests + ruff limpios.
+
+---
+
+## 2026-08-20 — Dos bugs de la primera prueba real (reporte de Verito)
+
+**Reporte:** Verito (hermana del dueño) probó el demo en vivo. Dos síntomas en la misma sesión:
+1. `"Hola"` → rehúso en **inglés** ("I can only answer questions about...").
+2. `"Quien es Alexis?"` → empezó a responder ("Alexis Alulema es") y el stream se **cortó**
+   ("Conexión interrumpida (la sesión del demo pudo expirar)"). No volvió a intentar.
+
+### Bug 1 — `detect_lang` sin señal para saludos sin tilde (confirmado y arreglado)
+`"hola"` no está en `_ES_WORDS` ni `_EN_WORDS` → empate 0-0 → cae al default `"en"`. Mismo problema
+con `"Gracias"`, `"Buenas"`, `"Adiós"` (sin tilde) escritos solos, sin ningún carácter que dispare
+`_ES_CHARS`. **Fix:** se agregaron saludos/muletillas comunes a `_ES_WORDS` (hola, buenas, buenos,
+tardes, noches, gracias, adios, saludos, ayuda, oye, disculpa) y equivalentes EN a `_EN_WORDS`
+(hello, hi, hey, thanks, please) — no cambia el default (`"en"` en empate real), solo añade señal
+para los casos comunes que antes empataban en 0. Test: `tests/test_rag.py::
+test_detect_lang_greeting_without_accents`.
+
+### Bug 2 — hipótesis: primera inferencia real paga la carga en frío del modelo
+`/healthz` (`app/main.py`) esperaba a Postgres pero **no a que Ollama tuviera el modelo cargado en
+RAM**. El healthcheck de `docker-compose.yml` (`ollama list`) solo confirma que el server responde;
+Ollama carga los pesos de forma **perezosa en la primera llamada de inferencia** — el rehúso de
+`"Hola"` no cuenta (responde sin llamar al LLM), así que `"Quien es Alexis?"` fue probablemente la
+**primera** llamada real a Ollama en ese contenedor recién provisionado. Esa carga (varios segundos,
+no reflejados en los TTFT "calientes" medidos por la infra, que reutilizó la misma sesión para 9
+preguntas) se sumó al streaming y el gateway cortó por su propio timeout antes de terminar. No
+confirmado con logs de la infra (hipótesis razonada desde el código), pero coincide exactamente con
+el síntoma: tokens sí llegaron a salir ("Alexis Alulema es") antes del corte.
+
+**Fix (mitigación, en este repo, sin coordinar con la infra):** `app/main.py` gana
+`_warm_up_llm(host, model, retries, delay)` en el `lifespan` — dispara un `POST /api/generate` **sin
+prompt** (patrón documentado por Ollama para precargar el modelo sin generar texto) con reintentos,
+**antes** de que `/healthz` reporte OK. Así el primer usuario real ya no paga la carga en frío: si
+`/healthz` es el gate de tráfico (como dice `HANDOFF.md`), el gateway no enruta hasta que Ollama esté
+tibio. Tests con `httpx.AsyncClient` falso (reintentos y agotamiento), simétricos a
+`test_wait_for_db_*`. **Costo:** el arranque del contenedor tarda unos segundos más (antes de
+reportar healthy) — aceptable, mejor que fallar el primer mensaje de un visitante real.
+
+**Validación (autoría):** ruff limpio + **64 tests**. **Pendiente (NUC/demo real):** confirmar que
+el arranque en frío no se alarga demasiado con el warm-up incluido, y reconfirmar con la infra si
+`/healthz` efectivamente gatea el tráfico entrante (si no, este fix no cierra el síntoma del todo y
+haría falta coordinar un timeout de sesión más generoso del lado del gateway).
+
+**Para publicar:** merge a `main` → `build-images` republica `rag-demo-app:latest` → el próximo demo
+provisionado ya lleva ambos fixes.
