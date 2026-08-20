@@ -8,6 +8,7 @@ const form = document.getElementById("composer");
 const input = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const themeToggle = document.getElementById("theme-toggle");
+const aboutDemoBtn = document.getElementById("about-demo-btn");
 
 /** Historial de la conversación: [{role, content}]. Se envía completo en cada turno. */
 const history = [];
@@ -250,6 +251,13 @@ messagesEl.addEventListener("click", (e) => {
 });
 
 themeToggle.addEventListener("click", toggleTheme);
+
+// Panel "Acerca de este demo" (window.DemoPanel): script aditivo cargado desde
+// alexisalulema.com — trigger:"custom" en DEMO_INFO, así que lo abrimos nosotros.
+// Si el script no cargó (offline, bloqueado), el botón simplemente no hace nada.
+aboutDemoBtn.addEventListener("click", () => {
+  window.DemoPanel?.open();
+});
 
 applyStoredTheme();
 input.focus();

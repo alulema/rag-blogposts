@@ -83,7 +83,8 @@ def stream():
 # Dockerfile para la app FastAPI (escucha en 0.0.0.0:8080, ingress interno)
 FROM python:3.13-slim
 WORKDIR /app
-COPY requirements.txt . && RUN pip install -r requirements.txt
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 COPY . .
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
 ```
@@ -117,6 +118,179 @@ tokens: colores, tipografías, dark/light) y estila con sus variables CSS:
 
 ---
 
+## Panel "Acerca de este demo" (opcional, recomendado)
+
+Un panel de detalles **consistente para todos los demos, sin código propio** — mismo modelo de
+auto-adopción que `demo-theme.css`. Es un botón flotante **"Acerca de"** que abre un drawer lateral
+con pestañas (Resumen · Arquitectura · Infraestructura · Diseño y límites) y un **diagrama de
+arquitectura** en Mermaid. Sirve de carta de presentación: quien prueba tu demo ve sobre qué corre,
+cómo está diseñado y sus limitantes, sin salir del demo.
+
+> **Cada demo es dueño de su propio contenido.** El sitio mantiene el *motor* del panel (estilos,
+> widget y este esquema); **la descripción, la arquitectura, el diagrama, la infra y las limitaciones
+> las escribe el equipo del demo** —que conoce su sistema—, no el mantenedor del sitio. Rellena tu
+> `DEMO_INFO` cuando desarrolles el demo, leyendo este contrato. El bloque de más abajo es un
+> **ejemplo ilustrativo**, no contenido que debas copiar tal cual.
+
+**Actívalo en 3 pasos:**
+
+1. Enlaza el tema (ya deberías tenerlo):
+   ```html
+   <link rel="stylesheet" href="https://alexisalulema.com/demo-theme.css">
+   ```
+2. Define tu contenido en `window.DEMO_INFO` (todo opcional; solo se renderiza lo que exista):
+   ```html
+   <script>
+     window.DEMO_INFO = { /* ver esquema + ejemplo abajo */ };
+   </script>
+   ```
+3. Carga el widget (una línea, **después** de definir `DEMO_INFO`):
+   ```html
+   <script src="https://alexisalulema.com/demo-panel.js" defer></script>
+   ```
+
+Es **puramente aditivo**: si `DEMO_INFO` no existe o el script no carga, tu demo no se afecta. Todo
+el contenido lo escribes tú y se renderiza como **texto** (no se inyecta HTML); solo el string
+`diagram` se entrega a Mermaid.
+
+### Esquema de `DEMO_INFO`
+
+| Campo | Tipo | Qué es |
+|---|---|---|
+| `title` | string | Título del panel (fallback: `document.title`). |
+| `overview` | string | Resumen del demo (pestaña Resumen). |
+| `architecture.description` | string | Prosa de la arquitectura. |
+| `architecture.diagram` | string (Mermaid) | Diagrama; se renderiza a SVG al abrir la pestaña. |
+| `infra` | `{ name, role }[]` | Componentes sobre los que corre (pestaña Infraestructura). |
+| `sizing` | string | Recursos / tuning (2–4 vCPU, modelo, etc.). |
+| `design` | string[] | Decisiones de diseño. |
+| `limitations` | string[] | Limitaciones honestas. |
+| `links` | `{ repo, blog? }` | Enlaces del pie. **`repo` = URL pública del repo GitHub del demo — recomendado**: es el chip "Código/Source" del panel y parte de la carta de presentación (el lector va al fuente). `blog` opcional (write-up). |
+| `lang` | `"en" \| "es" \| "auto"` | Idioma (por defecto `auto`: del `<html lang>` / navegador). |
+| `trigger` | `"custom"` | Omite el botón flotante; llámalo tú con `window.DemoPanel.open()`. |
+
+**Bilingüe:** cualquier campo acepta un hermano `…Es` (`overviewEs`, `sizingEs`, `roleEs`,
+`designEs`, `limitationsEs`, `descriptionEs`, `titleEs`). Si falta el localizado, usa el base.
+
+**API JS:** `window.DemoPanel.open() / .close() / .toggle()` — para cablear un botón propio en tu
+topbar (con `trigger: "custom"`).
+
+### Ejemplo ilustrativo (cómo lo rellenaría rag-blogposts) — escribe el de TU demo
+
+> Es una **referencia de forma y tono**, no contenido para copiar: cada demo describe su propia
+> arquitectura, infra y limitaciones.
+
+```html
+<script>
+window.DEMO_INFO = {
+  title:   "RAG Chatbot over Blog Posts",
+  titleEs: "Chatbot RAG sobre Posts del Blog",
+  overview:   "An interactive retrieval-augmented chatbot that answers strictly from Alexis Alulema's blog posts. Fully self-hosted: multilingual semantic search over a pgvector store plus a local Qwen 2.5 LLM served by Ollama — no external LLM APIs.",
+  overviewEs: "Un chatbot RAG interactivo que responde exclusivamente desde los posts del blog de Alexis Alulema. Totalmente autohospedado: búsqueda semántica multilingüe sobre un store pgvector y un LLM Qwen 2.5 local servido por Ollama — sin APIs de LLM externas.",
+  architecture: {
+    description:   "Your browser talks to a short-lived session (JWT) at the edge; a persistent gateway authenticates and routes to this ephemeral pod. The app embeds your question, runs a top-k vector search and streams a grounded answer token by token.",
+    descriptionEs: "Tu navegador habla con una sesión efímera (JWT) en el borde; un gateway persistente autentica y enruta a este pod efímero. La app embebe tu pregunta, hace búsqueda vectorial top-k y transmite una respuesta fundamentada token a token.",
+    diagram: `flowchart LR
+  U["Browser<br/>(session JWT)"] -->|HTTPS| CF["Cloudflare edge"]
+  CF --> GW["Session gateway<br/>auth + routing"]
+  GW -->|internal ingress| APP["FastAPI app"]
+  subgraph POD["Ephemeral pod - 2 vCPU / 4 GiB"]
+    APP -->|embed| EMB["sentence-transformers"]
+    APP -->|top-k| DB[("pgvector")]
+    APP -->|generate| LLM["Ollama - Qwen2.5 0.5B"]
+  end
+  APP -.->|SSE tokens| U`
+  },
+  infra: [
+    { name: "Cloudflare edge",       role: "TLS + WAF for demoNN.alexisalulema.com at the edge.",                                   roleEs: "TLS + WAF para demoNN.alexisalulema.com en el borde." },
+    { name: "Session gateway",       role: "Persistent reverse proxy: validates the session JWT and routes here. The app has no auth.", roleEs: "Reverse proxy persistente: valida el JWT de sesión y enruta aquí. La app no lleva auth." },
+    { name: "FastAPI app",           role: "Orchestrates retrieval + generation, streams tokens over SSE.",                          roleEs: "Orquesta recuperación + generación y transmite tokens por SSE." },
+    { name: "sentence-transformers", role: "Multilingual embeddings for the query and the corpus.",                                 roleEs: "Embeddings multilingües para la consulta y el corpus." },
+    { name: "pgvector (PostgreSQL)", role: "Vector store of the blog corpus; seeded at startup from a dump baked into the image.",   roleEs: "Store vectorial del corpus; sembrado al arranque desde un dump horneado en la imagen." },
+    { name: "Ollama - Qwen2.5 0.5B", role: "Local LLM; grounded answers, token by token. No external API.",                         roleEs: "LLM local; respuestas fundamentadas, token a token. Sin API externa." },
+    { name: "GHCR",                  role: "Public images (app / ollama / db), pulled fresh on each provision.",                    roleEs: "Imágenes públicas (app / ollama / db), traídas frescas en cada provisión." }
+  ],
+  sizing:   "Single ephemeral pod capped at 2 vCPU / 4 GiB (Consumption tier). CPU biased to inference — Ollama 1.5 vCPU, app 0.25, db 0.25. Tuned for CPU-only: Qwen 2.5 0.5B, TOP_K=3, CHUNK_TOKENS=400, ~256 output tokens → first token in ~6-7s.",
+  sizingEs: "Un solo pod efímero, tope 2 vCPU / 4 GiB (tier Consumption). CPU sesgado a la inferencia — Ollama 1.5 vCPU, app 0.25, db 0.25. Ajustado para CPU: Qwen 2.5 0.5B, TOP_K=3, CHUNK_TOKENS=400, ~256 tokens de salida → primer token en ~6-7s.",
+  design: [
+    "Fully self-hosted, no external LLM APIs — privacy, cost, and it showcases an OSS stack.",
+    "Grounded-only: answers come strictly from the blog corpus; off-topic questions are refused via a similarity threshold.",
+    "CPU-only inference: a small quantized model + short output over a bigger/slower one, to stay snappy for a single live user.",
+    "Fresh corpus: re-ingested from the public sitemap on each publish (event-driven), so the bot tracks the live blog."
+  ],
+  designEs: [
+    "Totalmente autohospedado, sin APIs de LLM externas — privacidad, costo, y muestra un stack OSS.",
+    "Solo fundamentado: responde exclusivamente desde el corpus del blog; lo fuera de tema se rehúsa vía un umbral de similitud.",
+    "Inferencia solo-CPU: modelo pequeño cuantizado + salida corta en vez de uno más grande/lento, para mantenerlo ágil con un usuario en vivo.",
+    "Corpus fresco: re-ingesta desde el sitemap público en cada publicación (event-driven), así el bot sigue al blog en vivo."
+  ],
+  limitations: [
+    "CPU inference → first token ~6-7s; no GPU in the ephemeral tier.",
+    "0.5B model: fast but phrasing is occasionally rough vs a larger model (latency/quality trade-off).",
+    "Grounded to ~34 posts — it won't answer outside the blog by design.",
+    "Ephemeral: ~20-min sessions, scale-to-zero, no memory across sessions."
+  ],
+  limitationsEs: [
+    "Inferencia en CPU → primer token ~6-7s; sin GPU en el tier efímero.",
+    "Modelo 0.5B: rápido, pero la redacción a veces es tosca frente a uno más grande (trade-off latencia/calidad).",
+    "Fundamentado a ~34 posts — por diseño no responde fuera del blog.",
+    "Efímero: sesiones ~20 min, scale-to-zero, sin memoria entre sesiones."
+  ],
+  links: { repo: "https://github.com/alulema/rag-blogposts" }
+};
+</script>
+<script src="https://alexisalulema.com/demo-panel.js" defer></script>
+```
+
+### CSP (solo si tu demo define `Content-Security-Policy`)
+
+El widget vive en el origen del sitio y Mermaid se importa **lazy** desde jsDelivr. Si pones CSP,
+permite:
+
+```
+style-src  'self' https://alexisalulema.com 'unsafe-inline';
+script-src 'self' https://alexisalulema.com https://cdn.jsdelivr.net;
+```
+
+(`'unsafe-inline'` en `style-src` es solo para los estilos que Mermaid inyecta en el SVG.) Si tu CSP
+no permite jsDelivr o Mermaid no carga, el panel **degrada** a mostrar el código del diagrama y el
+resto sigue funcionando. **La mayoría de demos no ponen CSP → funciona sin tocar nada.**
+
+> **Nota:** los demos de prueba de infra (`hello`, `heartbeat`) **no** usan el panel; es para demos
+> "de producto" que quieren contar su historia técnica.
+
+---
+
+## Documentación de tu demo (bitácora + manual de réplica)
+
+Tu repo debe llevar **dos** documentos con audiencias distintas — no los mezcles:
+
+1. **Bitácora / devlog** (`docs/Devlog.md` o similar) — **interno y cronológico**: actividades,
+   decisiones, desafíos superados y cómo se resolvieron. Es tu memoria para reconstruir el demo más
+   tarde. Aquí SÍ puedes anotar cualquier detalle (incluida la plataforma). Espejo de lo que el sitio
+   lleva en su propio Devlog.
+
+2. **Manual de réplica** (`README.md`) — **público y autocontenido**: que un lector clone tu repo y
+   **levante el demo por su cuenta** (p.ej. `docker run`), sin depender de ninguna orquestación
+   externa. Estructura sugerida: qué es · arquitectura (+ diagrama) · prerrequisitos · build · run ·
+   variables de entorno · uso · limitaciones.
+
+**Límite importante (portabilidad + separación de concerns):** el manual de réplica describe **solo tu
+demo**. **No** menciones la integración con `alexisalulema.com` ni la plataforma cloud que lo hospeda:
+son irrelevantes para replicar tu demo y lo acoplarían a una infra que no es la tuya. Por contrato tu
+demo es un contenedor **OSS que corre en cualquier lugar con Docker** — así que "corre en cualquier
+parte" es la **verdad literal**, no una omisión. Si necesitas explicar por qué la app no lleva auth ni
+TLS, dilo en **abstracto**: *"diseñada para correr detrás de un reverse proxy / gateway que termina TLS
+y hace la autenticación"* — sin nombrar la infra concreta. Fuera del manual: hostnames internos,
+JWT/gateway, detalles de la nube y cualquier secreto.
+
+> Las **tres capas** de doc no se duplican, se estratifican: **manual de réplica** (`README.md`) =
+> narrativa canónica y portable; **`DEMO_INFO`** (panel) = subconjunto destilado in-demo (resumen +
+> arquitectura + limitaciones); **devlog** = registro cronológico interno. Escribe una vez la narrativa
+> y destila hacia el panel.
+
+---
+
 ## Lo que entregas a la infra (hand-off manifest)
 
 Cuando tu imagen esté lista y probada, pásale al mantenedor de la infra estos datos (él hace el
@@ -126,6 +300,7 @@ registro y la provisión en el repo de infra privado; **tú no tocas Azure ni OI
 |---|---|
 | `projectId` (slug) | `rag-demo` |
 | Nombre legible (ES / EN) | "RAG Chatbot" |
+| Repo GitHub (público) | `https://github.com/alulema/rag-demo` (para el chip "Código" del panel y el `githubUrl` de la card en el sitio) |
 | Imagen GHCR + puerto | `ghcr.io/alulema/rag-demo:latest`, `8080` |
 | `shareable` | `false` (stateful → un entorno por request) / `true` (stateless reusable) |
 | Secretos a inyectar | `ANTHROPIC_API_KEY` |
@@ -161,40 +336,3 @@ curl localhost:8080/         # tu app, directo
 Para validar el ruteo por subdominio + auth por token end-to-end (opcional, antes de publicar),
 coordina con el mantenedor de la infra: tiene un `docker-compose` que levanta el gateway real +
 storage emulado y prueba el flujo completo.
-
----
-
-## Notas capturadas del relay con la infra (`personal-website`)
-
-> Respuestas de alcance general traídas desde el Copilot de `personal-website` (vía Alexis, relay
-> humano). Se capturan aquí para que el contrato sea el cerebro compartido (per `CLAUDE.md`).
-
-### 2026-08-12 — Pull policy en provisión y refresh event-driven
-
-**1) Pull policy: siempre `:latest` fresco (sin digest pineado).**
-La provisión (`demo-provision.yml`) crea un RG efímero nuevo (`rg-demo-<slot>`) + un Container App
-nuevo (primera revisión). ACA resuelve y **jala `:latest` contra el manifest actual de GHCR** al
-crear la revisión (revisión nueva = pull nuevo; no hay `imagePullPolicy`, ACA no es k8s). Por tanto
-**una imagen recién republicada llega sola al próximo demo** — cero acción de la infra.
-- **Caveats:** tag mutable ⇒ **sin rollback ni atomicidad** (lo que sea `:latest` al provisionar es
-  lo que ve el usuario). Si se quiere rollback/pin: publicar además un tag inmutable (`:<gitsha>` o
-  `:<fecha-corpus>`) y pasárselo a la infra para fijar el param `image` del Bicep.
-- **Demos en vuelo NO se actualizan** (correcto: efímeros ~20 min); el refresh solo afecta demos
-  provisionados **después** del push.
-
-**2) Refresh event-driven cross-repo: `repository_dispatch` (Opción A, recomendada).**
-Publicar post = Keystatic commitea markdown a `alulema/personal-website` (`src/content/blog-{en,es}/**`);
-la infra ya dispara workflows por REST API con un PAT. Al publicar, la infra hace
-`POST /repos/alulema/rag-blogposts/dispatches` con `event_type: refresh-corpus` → nuestro
-`refresh-corpus.yml` (trigger `repository_dispatch`, **debe vivir en el default branch**) reconstruye
-`rag-demo-db:latest` → por (1), el próximo demo sirve el corpus fresco.
-- **Token (única credencial):** lo **minta el dueño de este repo** (fine-grained PAT scoped a
-  `alulema/rag-blogposts`, **Contents: Read and write** para Opción A); Alexis lo guarda como secret
-  `RAG_DISPATCH_TOKEN` en `personal-website`. La infra no puede scopear un token a un repo ajeno.
-- **Timing (importante):** nuestra ingesta lee el **sitemap público en vivo**, así que el dispatch
-  debe llegar **después** de que el deploy del sitio publique el post (si no, re-ingerimos antes de
-  que el post esté live → no-op). Coordinar que el trigger salga tras `deploy.yml`, no en el push.
-- **Drafts:** como ingerimos del sitio público, los borradores **no** entran; un trigger espurio
-  produce un refresh no-op (sin diff → sin rebuild). No requiere filtrado especial.
-- La infra deja listo su `notify-rag-refresh.yml` (push a `main` con paths de blog → dispatch) en
-  cuanto se confirmen: repo, `event_type`, token, forma del `client_payload`, y default branch.
