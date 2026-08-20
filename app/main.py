@@ -159,6 +159,28 @@ async def chat(
     question = req.messages[-1].content
     history = [m.model_dump() for m in req.messages[:-1]]
 
+    # Detectar si es un saludo puro: "Hola", "Hi", "Buenas", etc.
+    # En ese caso, devolver un mensaje de bienvenida sin retrieval.
+    is_greeting = rag.is_greeting(question)
+
+    if is_greeting:
+        # Saludo puro: respuesta de bienvenida sin retrieval ni LLM.
+        cites = []
+
+        async def greeting_stream():
+            yield _sse("sources", cites)
+            greeting_msg = rag.greeting_response(rag.detect_lang(question))
+            for word in greeting_msg.split(" "):
+                yield _sse("token", {"text": word + " "})
+            yield _sse("done", {})
+
+        return StreamingResponse(
+            greeting_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    # Caso normal: retrieval + RAG.
     chunks = await run_in_threadpool(retriever.retrieve, question)
     if not chunks and history:
         # Follow-up dependiente de contexto (p.ej. "¿y en Python?"): la pregunta sola no trae

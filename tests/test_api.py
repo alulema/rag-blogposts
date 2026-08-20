@@ -140,6 +140,40 @@ def test_chat_rejects_non_user_last_message():
     assert r.status_code == 400
 
 
+def test_chat_greeting_returns_welcome_message():
+    """Un saludo puro (sin pregunta) devuelve un mensaje de bienvenida sin retrieval/LLM."""
+    # El retriever y ollama no deben ser invocados si is_greeting es True.
+    # Las dependencias se setean como dummy pero no se usan en este flujo.
+    client = _client([], ["should-not-be-used"])
+
+    r = client.post("/chat", json={"messages": [{"role": "user", "content": "Hola"}]})
+    assert r.status_code == 200
+    body = r.text
+    # Debe contener el mensaje de bienvenida en español
+    assert "event: sources" in body
+    assert "event: token" in body
+    assert "event: done" in body
+    # No debe haber citas (source list vacía)
+    assert "[]" in body  # sources: []
+    # El mensaje debe mencionar blog/Alexis o hola
+    assert "Hola" in body or "blog" in body.lower()
+    # El LLM dummy no debe ser usado
+    assert "should-not-be-used" not in body
+
+
+def test_chat_greeting_en():
+    """Un saludo en inglés devuelve bienvenida en inglés."""
+    client = _client([], ["should-not-be-used"])
+
+    r = client.post("/chat", json={"messages": [{"role": "user", "content": "Hi"}]})
+    assert r.status_code == 200
+    body = r.text
+    assert "event: sources" in body
+    assert "event: done" in body
+    # El LLM dummy no debe ser usado
+    assert "should-not-be-used" not in body
+
+
 def test_healthz():
     assert TestClient(app).get("/healthz").json() == {"status": "ok"}
 

@@ -32,6 +32,31 @@ def test_refusal_message():
     assert rag.refusal_message("xx") == rag.refusal_message("en")  # fallback
 
 
+def test_is_greeting():
+    # Saludos puros (sin pregunta)
+    assert rag.is_greeting("Hola") is True
+    assert rag.is_greeting("Hi") is True
+    assert rag.is_greeting("Buenas") is True
+    assert rag.is_greeting("Hey, hello") is True
+    # No son saludos puros: tienen contenido adicional
+    assert rag.is_greeting("Hola, ¿cómo estás?") is False
+    assert rag.is_greeting("Hi, what is RAG?") is False
+    # Casos extremos
+    assert rag.is_greeting("") is False
+    assert rag.is_greeting("   ") is False
+
+
+def test_greeting_response():
+    # ES
+    msg_es = rag.greeting_response("es")
+    assert "Hola" in msg_es or "hola" in msg_es
+    assert "Alexis Alulema" in msg_es or "blog" in msg_es
+    # EN
+    msg_en = rag.greeting_response("en")
+    assert "Hi" in msg_en or "hello" in msg_en.lower()
+    assert "Alexis Alulema" in msg_en or "blog" in msg_en
+
+
 def test_build_messages_structure():
     chunks = [_c("u1", "T1"), _c("u2", "T2")]
     history = [
