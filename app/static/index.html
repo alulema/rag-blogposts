@@ -26,15 +26,26 @@
             </p>
           </div>
         </div>
-        <button
-          id="theme-toggle"
-          class="icon-btn"
-          type="button"
-          aria-label="Cambiar tema claro/oscuro"
-          title="Tema claro/oscuro"
-        >
-          ◐
-        </button>
+        <div class="topbar-actions">
+          <button
+            id="about-demo-btn"
+            class="icon-btn"
+            type="button"
+            aria-label="Acerca de este demo"
+            title="Acerca de este demo"
+          >
+            ⓘ
+          </button>
+          <button
+            id="theme-toggle"
+            class="icon-btn"
+            type="button"
+            aria-label="Cambiar tema claro/oscuro"
+            title="Tema claro/oscuro"
+          >
+            ◐
+          </button>
+        </div>
       </header>
 
       <main id="messages" class="messages" aria-live="polite" aria-busy="false">
@@ -66,5 +77,99 @@
     </div>
 
     <script src="/static/app.js" defer></script>
+
+    <!-- Panel "Acerca de este demo" (motor + widget en vivo desde alexisalulema.com; aditivo:
+         si no carga, el demo sigue funcionando igual). Contenido propio del demo — ver
+         DEMO_INTEGRATION.md §Panel "Acerca de este demo". -->
+    <script>
+      window.DEMO_INFO = {
+        title: "RAG Chatbot over Blog Posts",
+        titleEs: "Chatbot RAG sobre Posts del Blog",
+        overview:
+          "A retrieval-augmented chatbot that answers questions strictly from Alexis Alulema's blog posts, in English or Spanish, with source citations. Fully self-hosted: multilingual semantic search over a pgvector store plus a local Qwen2.5-0.5B LLM served by Ollama — no external LLM API, no secrets at runtime.",
+        overviewEs:
+          "Un chatbot RAG que responde preguntas exclusivamente desde los posts del blog de Alexis Alulema, en español o inglés, citando la fuente. Totalmente autohospedado: búsqueda semántica multilingüe sobre un store pgvector y un LLM Qwen2.5-0.5B local servido por Ollama — sin API de LLM externa, sin secretos en runtime.",
+        architecture: {
+          description:
+            "This app, Ollama and Postgres/pgvector run as three containers in one ephemeral pod, sharing localhost — only the app has ingress; a platform gateway in front of it terminates TLS and authenticates the session, so this app itself has zero auth. Per message: the app embeds the question, runs a top-3 cosine search over the blog corpus, builds a grounded prompt from the retrieved chunks, and streams the answer token by token over SSE, attaching the source posts used.",
+          descriptionEs:
+            "Esta app, Ollama y Postgres/pgvector corren como tres contenedores en un pod efímero, compartiendo localhost — solo la app tiene ingress; un gateway de la plataforma por delante termina TLS y autentica la sesión, así que esta app no lleva auth propia. Por mensaje: la app embebe la pregunta, hace una búsqueda coseno top-3 sobre el corpus del blog, arma un prompt fundamentado con los chunks recuperados y transmite la respuesta token a token por SSE, adjuntando los posts fuente usados.",
+          diagram: `flowchart LR
+  U["Browser<br/>(session)"] -->|HTTPS| GW["Platform gateway<br/>TLS + auth"]
+  GW -->|internal ingress :8080| APP["FastAPI app"]
+  subgraph POD["Ephemeral pod - 2 vCPU / 4 GiB, shared localhost"]
+    APP -->|embed query| EMB["sentence-transformers<br/>multilingual MiniLM-L12-v2"]
+    APP -->|top-3 cosine| DB[("pgvector (Postgres 16)<br/>278 chunks / 34 posts")]
+    APP -->|grounded prompt| LLM["Ollama<br/>Qwen2.5-0.5B-Instruct"]
+  end
+  APP -.->|SSE tokens + citas| U`,
+        },
+        infra: [
+          {
+            name: "Platform gateway",
+            role: "Persistent reverse proxy in front of the pod: terminates TLS, validates the session and routes here. This app has no auth of its own.",
+            roleEs: "Reverse proxy persistente delante del pod: termina TLS, valida la sesión y enruta aquí. Esta app no lleva auth propia.",
+          },
+          {
+            name: "FastAPI app",
+            role: "Orchestrates retrieval + generation and streams tokens over SSE (POST /chat). Stateless: conversation history lives on the client.",
+            roleEs: "Orquesta recuperación + generación y transmite tokens por SSE (POST /chat). Stateless: el historial vive en el cliente.",
+          },
+          {
+            name: "sentence-transformers",
+            role: "paraphrase-multilingual-MiniLM-L12-v2 (384-d), baked into the app image; embeds both the query and the corpus, enabling cross-lingual retrieval (an ES question can surface EN chunks and vice versa).",
+            roleEs: "paraphrase-multilingual-MiniLM-L12-v2 (384-d), horneado en la imagen de la app; embebe la consulta y el corpus, habilitando retrieval cross-lingual (una pregunta en ES puede recuperar chunks en EN y viceversa).",
+          },
+          {
+            name: "pgvector (PostgreSQL 16)",
+            role: "Vector store of the blog corpus — 278 chunks from 34 posts (~400 tokens each). Seeded at startup from a dump baked into the db image; read-only at runtime.",
+            roleEs: "Store vectorial del corpus del blog — 278 chunks de 34 posts (~400 tokens c/u). Sembrado al arranque desde un dump horneado en la imagen db; solo lectura en runtime.",
+          },
+          {
+            name: "Ollama · Qwen2.5-0.5B-Instruct",
+            role: "Local LLM (Q4, baked into the ollama image), CPU-only. Grounded, streaming answers — no external API call.",
+            roleEs: "LLM local (Q4, horneado en la imagen ollama), solo CPU. Respuestas fundamentadas en streaming — sin llamada a API externa.",
+          },
+          {
+            name: "GHCR",
+            role: "Three public images (app / ollama / db), rebuilt and repushed by a refresh-corpus workflow whenever a new post is published.",
+            roleEs: "Tres imágenes públicas (app / ollama / db), reconstruidas y republicadas por un workflow de refresh-corpus cada vez que se publica un post nuevo.",
+          },
+        ],
+        sizing:
+          "Single ephemeral pod capped at 2 vCPU / 4 GiB (Consumption tier), split ~1.5 vCPU ollama / ~0.4 app / ~0.1 db. Tuned for CPU-only inference: Qwen2.5-0.5B (not 1.5B/7B), TOP_K=3, CHUNK_TOKENS=400, MAX_OUTPUT_TOKENS=256 — measured on the real platform: time-to-first-token ~5.7s average cold (range 2.5-8.3s), generation ~30-31 tok/s.",
+        sizingEs:
+          "Un solo pod efímero, tope 2 vCPU / 4 GiB (tier Consumption), repartido ~1.5 vCPU ollama / ~0.4 app / ~0.1 db. Ajustado para inferencia solo-CPU: Qwen2.5-0.5B (no 1.5B/7B), TOP_K=3, CHUNK_TOKENS=400, MAX_OUTPUT_TOKENS=256 — medido en la plataforma real: tiempo al primer token ~5.7s promedio en frío (rango 2.5-8.3s), generación ~30-31 tok/s.",
+        design: [
+          "Fully self-hosted, zero external LLM APIs and zero secrets at runtime — $0 cost, and it doubles as a showcase of an all-OSS RAG stack (no Microsoft tech in the internal stack).",
+          "Grounded-only: a similarity threshold (0.42) gates the top-1 match before answering; below it, the bot says it can't help rather than guessing.",
+          "Cross-lingual by construction: one multilingual embedding space for EN+ES means a single corpus serves both languages without duplicating content.",
+          "Small, quantized model + trimmed retrieval (TOP_K, chunk size) traded deliberately against a bigger/slower model, to keep single-user latency reasonable on CPU-only hardware.",
+          "The corpus is re-ingested from the public sitemap on every blog publish, so the bot tracks the live blog without ever rebuilding this app's own logic.",
+        ],
+        designEs: [
+          "Totalmente autohospedado, cero APIs de LLM externas y cero secretos en runtime — costo $0, y de paso muestra un stack RAG 100% OSS (sin tecnología Microsoft en el stack interno).",
+          "Solo fundamentado: un umbral de similitud (0.42) filtra el top-1 antes de responder; por debajo, el bot dice que no puede ayudar en vez de adivinar.",
+          "Cross-lingual por construcción: un solo espacio de embeddings multilingüe para EN+ES permite que un único corpus sirva a ambos idiomas sin duplicar contenido.",
+          "Modelo pequeño y cuantizado + retrieval recortado (TOP_K, tamaño de chunk) sacrificados deliberadamente frente a uno más grande/lento, para mantener la latencia razonable con un solo usuario en hardware solo-CPU.",
+          "El corpus se re-ingesta desde el sitemap público en cada publicación del blog, así el bot sigue al blog en vivo sin tocar la lógica de esta app.",
+        ],
+        limitations: [
+          "CPU-only inference: first token ~5.7s on average when cold (2.5-8.3s measured range); there's no GPU in the ephemeral tier.",
+          "0.5B model: fast (~30 tok/s) but occasionally rougher phrasing than a larger model — a deliberate latency/quality trade-off.",
+          "Grounded to a small corpus (~34 posts / 278 chunks): by design it won't answer outside the blog, and a couple of closely adjacent topics can occasionally slip past the similarity gate.",
+          "Ephemeral by design: sessions are time- and idle-capped by the platform, and there's no memory across sessions — conversation history lives only in the client for the current session.",
+        ],
+        limitationsEs: [
+          "Inferencia solo-CPU: primer token ~5.7s en promedio en frío (rango medido 2.5-8.3s); no hay GPU en el tier efímero.",
+          "Modelo 0.5B: rápido (~30 tok/s) pero a veces con redacción más tosca que un modelo más grande — un trade-off latencia/calidad deliberado.",
+          "Fundamentado a un corpus chico (~34 posts / 278 chunks): por diseño no responde fuera del blog, y un par de temas muy cercanos pueden colarse ocasionalmente por el filtro de similitud.",
+          "Efímero por diseño: la plataforma limita las sesiones por tiempo e inactividad, y no hay memoria entre sesiones — el historial vive solo en el cliente durante la sesión actual.",
+        ],
+        links: { repo: "https://github.com/alulema/rag-blogposts" },
+        trigger: "custom",
+      };
+    </script>
+    <script src="https://alexisalulema.com/demo-panel.js" defer></script>
   </body>
 </html>
