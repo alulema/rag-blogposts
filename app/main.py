@@ -129,6 +129,14 @@ async def chat(
     history = [m.model_dump() for m in req.messages[:-1]]
 
     chunks = await run_in_threadpool(retriever.retrieve, question)
+    if not chunks and history:
+        # Follow-up dependiente de contexto (p.ej. "¿y en Python?"): la pregunta sola no trae
+        # señal suficiente para el umbral grounded. Segunda oportunidad con el turno de
+        # usuario anterior como contexto antes de rehusar (ver Devlog: memoria/ventana de
+        # contexto). No afecta el caso normal (primera pregunta, o pregunta ya autocontenida).
+        contextual_query = rag.contextualize_query(question, history)
+        if contextual_query != question:
+            chunks = await run_in_threadpool(retriever.retrieve, contextual_query)
     cites = rag.citations(chunks)
 
     async def event_stream():

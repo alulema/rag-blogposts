@@ -91,6 +91,29 @@ def format_context(chunks: Sequence[RetrievedChunk]) -> str:
     return "\n\n".join(f"[{i}] {c.title} ({c.url})\n{c.content}" for i, c in enumerate(chunks, 1))
 
 
+def contextualize_query(question: str, history: Sequence[dict]) -> str:
+    """Antepone el turno de usuario anterior a la pregunta, para el *embed* de retrieval.
+
+    Un follow-up que depende del contexto ("¿y en Python?", "dame un ejemplo") suele traer
+    poca señal propia y no pasa el umbral grounded aunque el tema ya se venía tratando; el LLM
+    sí recibe el historial completo vía ``build_messages``, pero si el retrieval no encuentra
+    chunks, ``main.chat`` rehúsa antes de siquiera invocarlo. Esta función es el fallback: se
+    usa solo para volver a intentar el retrieval con contexto, nunca se le manda tal cual al
+    LLM (eso lo sigue haciendo ``build_messages`` con el historial real, turno a turno).
+    """
+    prior_user = next(
+        (
+            h.get("content")
+            for h in reversed(list(history))
+            if h.get("role") == "user" and h.get("content")
+        ),
+        None,
+    )
+    if not prior_user:
+        return question
+    return f"{prior_user} {question}"
+
+
 def build_messages(
     question: str,
     history: Iterable[dict],
