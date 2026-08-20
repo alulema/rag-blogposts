@@ -798,3 +798,30 @@ haría falta coordinar un timeout de sesión más generoso del lado del gateway)
 
 **Para publicar:** merge a `main` → `build-images` republica `rag-demo-app:latest` → el próximo demo
 provisionado ya lleva ambos fixes.
+
+---
+
+## 2026-08-20 — Respuesta amigable a saludos puros
+
+**Idea del dueño:** cuando alguien saluda ("Hola", "Hi"), en lugar de devolver el rechazo enlatado,
+el bot debería presentarse y explicar qué puede hacer (mitigación de UX: el usuario entiende el
+alcance desde el primer segundo, menos incentivo a preguntas fuera de tema).
+
+**Implementación (puro):**
+- `app.rag.is_greeting(text)` → detecta si el texto es **solo palabras de saludo** (sin pregunta
+  de fondo). Diferencia "Hola" de "Hola, ¿qué puedes hacer?" o "Hola, ¿cómo funcionan los
+  transformadores?". Heurística: palabras extraídas ⊆ {hola, hi, hey, buenas, buenos, ...}.
+- `app.rag.greeting_response(lang)` → mensaje de bienvenida bilingüe que presenta el bot, sus
+  temas y sugiere preguntas de muestra (p.ej. "¿De qué temas habla el blog?" o "¿Cómo funcionan
+  los transformadores?").
+- `app.main.chat()` → early-exit si `is_greeting(question)` es True: devuelve el mensaje de
+  bienvenida **sin retrieval ni LLM**, directo por SSE (rápido, cero latencia, cero costo).
+
+**Tests (5 nuevos):**
+- `tests/test_rag.py`: `test_is_greeting` (casos positivos/negativos), `test_greeting_response`
+  (ambos idiomas).
+- `tests/test_api.py`: `test_chat_greeting_returns_welcome_message` y `test_chat_greeting_en`
+  (verifican que el endpoint devuelve bienvenida sin invocar retriever/ollama).
+
+**Validación:** ruff limpio + **67 tests**. Pendiente (NUC): probar en vivo que "Hola" devuelve
+bienvenida amigable.

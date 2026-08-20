@@ -90,6 +90,9 @@ _EN_WORDS = {
     "please",
 }
 
+_GREETINGS_ES = {"hola", "buenas", "buenos", "tardes", "noches", "saludos", "oye", "hey"}
+_GREETINGS_EN = {"hello", "hi", "hey"}
+
 
 def detect_lang(text: str) -> str:
     """Heurística ligera EN/ES para el rehúso (el LLM responde en el idioma vía system prompt)."""
@@ -103,6 +106,40 @@ def detect_lang(text: str) -> str:
 
 def refusal_message(lang: str) -> str:
     return _REFUSAL.get(lang, _REFUSAL["en"])
+
+
+def is_greeting(text: str) -> bool:
+    """Detecta si el mensaje es un saludo puro (sin pregunta de fondo).
+
+    Heurística: si el texto limpio es solo palabras de la lista de saludos, es un saludo.
+    Sirve para diferenciar "Hola" de "Hola, ¿qué puedes hacer?" o "Hola, ¿cómo funcionan
+    los transformadores?".
+    """
+    words = set(re.findall(r"[a-záéíóúñ]+", text.lower()))
+    if not words:
+        return False
+    # Si todas las palabras son saludos en ambos idiomas, es un saludo puro.
+    all_greetings = _GREETINGS_ES | _GREETINGS_EN
+    return words <= all_greetings
+
+
+def greeting_response(lang: str) -> str:
+    """Mensaje de bienvenida que presenta el bot y su alcance."""
+    if lang == "es":
+        return (
+            "¡Hola! Soy un chatbot que responde **exclusivamente** sobre los posts del "
+            "blog de Alexis Alulema. Puedo ayudarte a entender RAG, LLMs, Python, asyncio, "
+            "embeddings y más.\n\n"
+            "Prueba: *¿De qué temas habla el blog?* o "
+            "**¿Cómo funcionan los transformadores?**"
+        )
+    else:
+        return (
+            "Hi! I'm a chatbot that answers questions **exclusively** about Alexis Alulema's "
+            "blog. I can help you understand RAG, LLMs, Python, asyncio, embeddings, and more.\n\n"
+            "Try: *What topics does this blog cover?* or "
+            "**How do transformers work?**"
+        )
 
 
 def format_context(chunks: Sequence[RetrievedChunk]) -> str:
