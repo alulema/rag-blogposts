@@ -825,3 +825,61 @@ alcance desde el primer segundo, menos incentivo a preguntas fuera de tema).
 
 **Validación:** ruff limpio + **67 tests**. Pendiente (NUC): probar en vivo que "Hola" devuelve
 bienvenida amigable.
+
+---
+
+## 2026-08-20 — Redirección amable en vez del rehúso enlatado (Opción B, con LLM)
+
+**Reporte del dueño:** preguntó "¿Qué temas conoces?" (formulación distinta al chip sugerido) y
+recibió el mismo mensaje enlatado de siempre — se siente robótico, la misma frase sin importar la
+pregunta. Propuso mejorar el "sin contexto" con una respuesta amable que invite a preguntar algo
+respondible, en vez de solo rehusar.
+
+**Dos opciones evaluadas con el dueño:**
+- **A (determinística, sin LLM):** plantilla rellenada con temas fijos. Cero latencia, pero sigue
+  siendo un template, no tan conversacional.
+- **B (con LLM, elegida):** llamar a Ollama con un system prompt distinto que reconozca la
+  limitación honestamente y sugiera temas reales — más natural, a costa de latencia adicional en
+  el camino "sin contexto" (antes instantáneo, sin LLM).
+
+**Implementación (Opción B):**
+- `app.rag._no_context_system_prompt(lang)`: prompt bilingüe que instruye al LLM a (1) NO usar
+  conocimiento externo para responder la pregunta original, (2) decir amablemente que no tiene esa
+  info en el blog, (3) invitar a 2-3 temas reales concretos (lista `_BLOG_TOPICS`: RAG, Python,
+  asyncio, transformers, TensorFlow, embeddings), (4) ser cálido y conciso (2-3 frases).
+- `app.rag.build_no_context_messages(question, history, lang)`: mismo *shape* que `build_messages`
+  (system + historial + pregunta) pero sin chunks — el LLM ve la conversación completa igual que
+  en el camino grounded.
+- `app.rag.NO_CONTEXT_MAX_TOKENS = 100`: la redirección es corta: no necesita el presupuesto
+  completo (`MAX_OUTPUT_TOKENS=256`) que sí necesita una respuesta de contenido real. Mantiene el
+  camino "sin contexto" — el más común en preguntas fuera de tema — con la latencia más baja
+  posible dado que ahora sí pasa por el LLM.
+- `app.ollama_client.OllamaClient.stream_chat()`: gana `max_tokens: int | None = None` opcional
+  para poder pasar ese presupuesto reducido sin tocar el default de la instancia.
+- `app.main.chat()`: el `event_stream()` se **unificó** — ya no hay una rama "sin LLM"; siempre
+  llama a Ollama, solo cambia cómo se arman los mensajes (`build_messages` con chunks vs.
+  `build_no_context_messages` sin ellos) y el `max_tokens` pasado.
+- `_REFUSAL`/`refusal_message` (el rehúso enlatado) **se mantienen** en `app.rag` — ya no se usan
+  en `main.py`, pero quedan como pieza pura testeada, disponible como fallback futuro si se
+  necesita degradar sin LLM (p.ej. si el warm-up de Ollama falla).
+
+**Tradeoff aceptado (hablado con el dueño):** el camino "sin contexto" antes era instantáneo (sin
+LLM); ahora paga latencia real incluso para preguntas totalmente fuera de tema. Con
+`NO_CONTEXT_MAX_TOKENS=100` (vs. 256 del camino grounded) y el warm-up de Ollama de la sesión
+anterior, debería seguir sintiéndose rápido, pero **no se ha medido en vivo** — pendiente en la
+NUC antes de publicar.
+
+**Tests (6 nuevos):**
+- `tests/test_rag.py`: `test_build_no_context_messages_structure` (no incluye "Context:" ni el
+  rehúso enlatado literal, preserva historial) y `test_build_no_context_messages_prompt_mentions_
+  real_topics_by_lang` (temas reales por idioma, prompt distinto ES/EN).
+- `tests/test_api.py`: `_FakeOllama` ahora registra `(messages, max_tokens)` por llamada.
+  `test_chat_no_context_gets_friendly_llm_redirect_not_canned_refusal` (reemplaza el test viejo de
+  rehúso: verifica que SÍ se llama al LLM, con el system prompt de redirección y
+  `max_tokens=NO_CONTEXT_MAX_TOKENS`) y `test_chat_followup_without_context_match_gets_friendly_
+  llm_redirect` (mismo caso pero tras el retry de contexto fallido — un solo intento de
+  generación, sin loops).
+
+**Validación:** ruff limpio + **73 tests**. **Pendiente (NUC):** medir latencia real del camino
+"sin contexto" ahora que pasa por el LLM, y probar a mano que la redirección se siente natural
+(no repetitiva) con preguntas variadas fuera de tema.

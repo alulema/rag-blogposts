@@ -10,6 +10,7 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
+from app import rag
 from app.main import app, get_ollama, get_retriever
 from app.retrieval import RetrievedChunk
 
@@ -49,8 +50,10 @@ class _FakeContextualRetriever:
 class _FakeOllama:
     def __init__(self, tokens):
         self._tokens = tokens
+        self.calls = []  # [(messages, max_tokens), ...] -- una entrada por invocación
 
-    async def stream_chat(self, messages):
+    async def stream_chat(self, messages, max_tokens=None):
+        self.calls.append((messages, max_tokens))
         for tok in self._tokens:
             yield tok
 
@@ -78,15 +81,28 @@ def test_chat_streams_sources_tokens_done():
     assert "event: done" in body
 
 
-def test_chat_grounded_refusal_without_context():
-    client = _client([], ["should-not-be-used"])
+def test_chat_no_context_gets_friendly_llm_redirect_not_canned_refusal():
+    """Sin contexto grounded, se llama al LLM con un prompt de redirección amable (Opción B,
+    reporte del dueño 2026-08-20) en vez del rehúso enlatado -- misma frase siempre, sensación
+    robótica."""
+    ollama = _FakeOllama(["No tengo esa información, pero puedo ayudarte con Python o RAG."])
+    app.dependency_overrides[get_retriever] = lambda: _FakeRetriever([])
+    app.dependency_overrides[get_ollama] = lambda: ollama
+    client = TestClient(app)
+
     r = client.post(
         "/chat", json={"messages": [{"role": "user", "content": "¿Quién ganó el mundial 2022?"}]}
     )
     body = r.text
     assert "event: sources\ndata: []" in body  # sin citas
-    assert "Solo " in body and "Alulema" in body  # rehúso en español (streamed por palabras)
-    assert "should-not-be-used" not in body  # el LLM no se invoca sin contexto
+    assert "No tengo esa información" in body  # respuesta del LLM, no el rehúso enlatado
+
+    assert len(ollama.calls) == 1
+    messages, max_tokens = ollama.calls[0]
+    assert messages[0]["role"] == "system"
+    assert "blog" in messages[0]["content"].lower()  # system prompt de redirección, no el grounded
+    assert messages[-1] == {"role": "user", "content": "¿Quién ganó el mundial 2022?"}
+    assert max_tokens == rag.NO_CONTEXT_MAX_TOKENS  # respuesta corta, no el presupuesto completo
 
 
 def test_chat_retries_retrieval_with_context_on_followup():
@@ -112,11 +128,14 @@ def test_chat_retries_retrieval_with_context_on_followup():
     assert retriever.queries == ["and in Python?", "What is DDD? and in Python?"]
 
 
-def test_chat_refuses_followup_without_prior_context_match():
-    """Si ni siquiera el reintento con contexto encuentra chunks, rehúsa igual (sin loops)."""
+def test_chat_followup_without_context_match_gets_friendly_llm_redirect():
+    """Si ni siquiera el reintento con contexto encuentra chunks, se llama al LLM con el prompt
+    de redirección (no un rehúso enlatado) -- sin loops de retrieval, y el historial se preserva
+    para que el LLM tenga la conversación completa."""
     retriever = _FakeContextualRetriever([], needle="nunca-matchea")
+    ollama = _FakeOllama(["No encuentro eso en el blog, pero sí puedo hablarte de Python."])
     app.dependency_overrides[get_retriever] = lambda: retriever
-    app.dependency_overrides[get_ollama] = lambda: _FakeOllama(["should-not-be-used"])
+    app.dependency_overrides[get_ollama] = lambda: ollama
     client = TestClient(app)
 
     r = client.post(
@@ -130,8 +149,14 @@ def test_chat_refuses_followup_without_prior_context_match():
         },
     )
     body = r.text
-    assert "Solo " in body and "Alulema" in body
-    assert "should-not-be-used" not in body
+    assert "No encuentro eso en el blog" in body
+
+    assert len(ollama.calls) == 1  # sin loops: un solo intento de generación tras el retry
+    messages, max_tokens = ollama.calls[0]
+    assert messages[0]["role"] == "system"
+    assert {"role": "user", "content": "¿Quién ganó el mundial 2022?"} in messages
+    assert {"role": "assistant", "content": "Solo puedo responder..."} in messages
+    assert max_tokens == rag.NO_CONTEXT_MAX_TOKENS
 
 
 def test_chat_rejects_non_user_last_message():

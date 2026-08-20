@@ -18,12 +18,16 @@ class OllamaClient:
         self._model = model
         self._max_tokens = max_tokens
 
-    async def stream_chat(self, messages: list[dict]) -> AsyncIterator[str]:
+    async def stream_chat(
+        self, messages: list[dict], max_tokens: int | None = None
+    ) -> AsyncIterator[str]:
+        """``max_tokens`` sobreescribe el default de la instancia (p.ej. respuestas cortas de
+        redirección cuando no hay contexto grounded -- no necesitan el presupuesto completo)."""
         payload = {
             "model": self._model,
             "messages": messages,
             "stream": True,
-            "options": {"num_predict": self._max_tokens},
+            "options": {"num_predict": max_tokens if max_tokens is not None else self._max_tokens},
         }
         timeout = httpx.Timeout(300.0, connect=10.0)
         async with (
