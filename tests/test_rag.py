@@ -18,6 +18,14 @@ def test_detect_lang():
     assert rag.detect_lang("Qué es softmax") == "es"
 
 
+def test_detect_lang_greeting_without_accents():
+    # Reporte real (Devlog 2026-08-20): "Hola" sin tilde no dejaba señal ES/EN y caía al
+    # default "en" -> rehúso en el idioma equivocado.
+    assert rag.detect_lang("Hola") == "es"
+    assert rag.detect_lang("Buenas, gracias!") == "es"
+    assert rag.detect_lang("Hi") == "en"
+
+
 def test_refusal_message():
     assert "Alexis" in rag.refusal_message("es")
     assert rag.refusal_message("en").startswith("I can only")

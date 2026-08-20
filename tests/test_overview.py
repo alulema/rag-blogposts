@@ -12,9 +12,7 @@ from ingest.overview import (
 )
 
 
-def _post(
-    title: str, lang: str, published: date | None, tags: tuple[str, ...] = ()
-) -> Post:
+def _post(title: str, lang: str, published: date | None, tags: tuple[str, ...] = ()) -> Post:
     base = (
         "https://alexisalulema.com/es/blog/" if lang == "es" else "https://alexisalulema.com/blog/"
     )

@@ -52,6 +52,19 @@ _ES_WORDS = {
     "las",
     "una",
     "un",
+    # Saludos/muletillas comunes sin tilde: sin estas palabras, un mensaje corto como "Hola" no
+    # deja ninguna señal ES/EN y cae al default "en" (ver Devlog 2026-08-20, reporte de Verito).
+    "hola",
+    "buenas",
+    "buenos",
+    "tardes",
+    "noches",
+    "gracias",
+    "adios",
+    "saludos",
+    "ayuda",
+    "oye",
+    "disculpa",
 }
 _EN_WORDS = {
     "the",
@@ -70,6 +83,11 @@ _EN_WORDS = {
     "a",
     "an",
     "of",
+    "hello",
+    "hi",
+    "hey",
+    "thanks",
+    "please",
 }
 
 

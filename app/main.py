@@ -6,6 +6,7 @@ de ``config``. Diseñada para teardown abrupto: estado solo en memoria + DB efí
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -13,6 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, StreamingResponse
@@ -66,6 +68,33 @@ def _wait_for_db(dsn: str, retries: int = 60, delay: float = 2.0) -> None:
     raise RuntimeError(f"DB no disponible tras {retries} intentos: {last_err}")
 
 
+async def _warm_up_llm(host: str, model: str, retries: int = 30, delay: float = 2.0) -> None:
+    """Precarga el modelo en la memoria de Ollama antes de reportar ``/healthz`` OK.
+
+    El healthcheck de Ollama (``ollama list``, en ``docker-compose.yml``) solo confirma que el
+    server responde; el peso del modelo se carga de forma perezosa en la PRIMERA llamada de
+    inferencia (``/api/generate`` o ``/api/chat``). Sin este warm-up, esa primera carga (varios
+    segundos, no reflejados en las mediciones de TTFT "caliente" del Devlog) la paga el primer
+    usuario real del demo, en medio de un stream SSE que el gateway puede cortar por su propio
+    timeout de sesión antes de que el modelo termine de cargar y generar. Se dispara un
+    ``/api/generate`` sin ``prompt`` — patrón documentado por Ollama para precargar el modelo sin
+    generar texto (ver Devlog 2026-08-20, reporte de Verito).
+    """
+    url = f"{host.rstrip('/')}/api/generate"
+    last_err: Exception | None = None
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=5.0)) as client:
+        for attempt in range(retries):
+            try:
+                resp = await client.post(url, json={"model": model})
+                resp.raise_for_status()
+                return
+            except Exception as err:  # noqa: BLE001 - reintenta hasta que Ollama cargue el modelo
+                last_err = err
+                if attempt < retries - 1:
+                    await asyncio.sleep(delay)
+    raise RuntimeError(f"Ollama no cargó el modelo tras {retries} intentos: {last_err}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -85,6 +114,8 @@ async def lifespan(app: FastAPI):
     app.state.ollama = OllamaClient(
         settings.ollama_host, settings.llm_model, settings.max_output_tokens
     )
+    llm_retries = int(os.environ.get("LLM_WARMUP_RETRIES", "30"))
+    await _warm_up_llm(settings.ollama_host, settings.llm_model, llm_retries)
     try:
         yield
     finally:
