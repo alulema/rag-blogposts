@@ -195,8 +195,14 @@ async def chat(
     async def event_stream():
         yield _sse("sources", cites)
         if not chunks:
-            # Grounded-only: sin contexto no se llama al LLM; rehúso en el idioma de la pregunta.
-            for word in rag.refusal_message(rag.detect_lang(question)).split(" "):
+            # Grounded-only: sin contexto no se llama al LLM. Se probó llamarlo con un prompt
+            # de redirección (Opción B, 2026-08-20) para que sonara menos enlatado, pero se
+            # revirtió: Qwen2.5-0.5B ignora la instrucción "no uses conocimiento externo" cuando
+            # la pregunta le resulta conocida -- respondió la capital de Francia y afirmó
+            # (incorrectamente) que Brasil ganó el Mundial 2022 en vez de admitir que no sabía.
+            # Grounded-only es una restricción dura (`CLAUDE.md`); un mensaje determinístico sin
+            # variedad es preferible a uno que a veces alucina. Ver `rag.no_context_response`.
+            for word in rag.no_context_response(rag.detect_lang(question)).split(" "):
                 yield _sse("token", {"text": word + " "})
         else:
             messages = rag.build_messages(question, history, chunks)

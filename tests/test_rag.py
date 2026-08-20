@@ -73,6 +73,22 @@ def test_build_messages_structure():
     assert msgs[-1] == {"role": "user", "content": "current q"}
 
 
+def test_no_context_response():
+    # Determinístico, sin LLM: reconoce la limitación + sugiere temas reales del blog. Se probó
+    # generar esto con el LLM (Opción B) pero se revirtió el mismo día -- Qwen2.5-0.5B ignoraba
+    # la instrucción "no uses conocimiento externo" y alucinaba respuestas fuera de tema (ver
+    # Devlog 2026-08-20). Nunca debe ser idéntico al rehúso seco de `refusal_message`.
+    msg_es = rag.no_context_response("es")
+    assert "No tengo esa información" in msg_es
+    assert "Python" in msg_es and "RAG" in msg_es
+    assert msg_es != rag.refusal_message("es")
+
+    msg_en = rag.no_context_response("en")
+    assert "I don't have that information" in msg_en
+    assert "Python" in msg_en and "RAG" in msg_en
+    assert msg_en != rag.refusal_message("en")
+
+
 def test_contextualize_query_prepends_prior_user_turn():
     history = [
         {"role": "user", "content": "What is DDD?"},

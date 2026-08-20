@@ -78,14 +78,22 @@ def test_chat_streams_sources_tokens_done():
     assert "event: done" in body
 
 
-def test_chat_grounded_refusal_without_context():
+def test_chat_no_context_gets_deterministic_friendly_redirect():
+    """Sin contexto grounded: mensaje determinístico y amable (`rag.no_context_response`), sin
+    invocar al LLM. Se probó llamar al LLM con un prompt de redirección (Opción B, reporte del
+    dueño 2026-08-20) pero se revirtió el mismo día: Qwen2.5-0.5B ignoraba la instrucción "no
+    uses conocimiento externo" y respondía preguntas fuera de tema con su propio conocimiento
+    (a veces incorrecto) en vez de admitir que no sabía -- rompía grounded-only. Ver Devlog."""
     client = _client([], ["should-not-be-used"])
+
     r = client.post(
         "/chat", json={"messages": [{"role": "user", "content": "¿Quién ganó el mundial 2022?"}]}
     )
     body = r.text
     assert "event: sources\ndata: []" in body  # sin citas
-    assert "Solo " in body and "Alulema" in body  # rehúso en español (streamed por palabras)
+    # Transmitido palabra por palabra (SSE): se busca la presencia de palabras individuales del
+    # mensaje de `rag.no_context_response`, no la frase contigua.
+    assert "tengo " in body and "información" in body and "RAG" in body
     assert "should-not-be-used" not in body  # el LLM no se invoca sin contexto
 
 
@@ -113,7 +121,8 @@ def test_chat_retries_retrieval_with_context_on_followup():
 
 
 def test_chat_refuses_followup_without_prior_context_match():
-    """Si ni siquiera el reintento con contexto encuentra chunks, rehúsa igual (sin loops)."""
+    """Si ni siquiera el reintento con contexto encuentra chunks, rehúsa igual (sin loops), con
+    el mensaje determinístico amable en vez del LLM."""
     retriever = _FakeContextualRetriever([], needle="nunca-matchea")
     app.dependency_overrides[get_retriever] = lambda: retriever
     app.dependency_overrides[get_ollama] = lambda: _FakeOllama(["should-not-be-used"])
@@ -130,7 +139,7 @@ def test_chat_refuses_followup_without_prior_context_match():
         },
     )
     body = r.text
-    assert "Solo " in body and "Alulema" in body
+    assert "tengo " in body and "información" in body  # rag.no_context_response, no el LLM
     assert "should-not-be-used" not in body
 
 

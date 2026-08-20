@@ -27,6 +27,15 @@ _REFUSAL = {
     "en": "I can only answer questions about Alexis Alulema's blog posts.",
 }
 
+# Temas reales del blog (subset representativo, ver ingest/overview.py para la lista completa de
+# tags). Se inyectan en el mensaje "sin contexto" para que la sugerencia sea concreta, no genérica
+# ("pregúntame sobre otra cosa").
+_BLOG_TOPICS = {
+    "es": ["RAG", "Python", "asyncio", "transformadores", "TensorFlow", "embeddings"],
+    "en": ["RAG", "Python", "asyncio", "transformers", "TensorFlow", "embeddings"],
+}
+
+
 _ES_CHARS = re.compile(r"[¿¡ñáéíóú]", re.IGNORECASE)
 _ES_WORDS = {
     "que",
@@ -106,6 +115,30 @@ def detect_lang(text: str) -> str:
 
 def refusal_message(lang: str) -> str:
     return _REFUSAL.get(lang, _REFUSAL["en"])
+
+
+def no_context_response(lang: str) -> str:
+    """Mensaje determinístico (sin LLM) para cuando el retrieval no encuentra contexto grounded.
+
+    Más amable que ``refusal_message`` (la misma frase seca siempre — reporte del dueño
+    2026-08-20): reconoce que no tiene esa información y sugiere temas reales del blog.
+    **Determinístico a propósito, no generado por el LLM** (a diferencia del intento anterior con
+    Ollama, revertido el mismo día): Qwen2.5-0.5B ignora instrucciones negativas ("no uses
+    conocimiento externo") cuando la pregunta le resulta "conocida" — probado en vivo, respondió
+    la capital de Francia y afirmó (incorrectamente) que Brasil ganó el Mundial 2022 en vez de
+    admitir que no tenía esa información. Grounded-only es una restricción dura del proyecto
+    (``CLAUDE.md``): mejor un mensaje sin variedad conversacional que uno que a veces alucina.
+    """
+    topics = ", ".join(_BLOG_TOPICS.get(lang, _BLOG_TOPICS["en"]))
+    if lang == "es":
+        return (
+            f"No tengo esa información en los posts del blog. Puedo ayudarte con temas como "
+            f"{topics}, entre otros — ¿qué te gustaría saber?"
+        )
+    return (
+        f"I don't have that information in the blog posts. I can help you with topics like "
+        f"{topics}, among others — what would you like to know?"
+    )
 
 
 def is_greeting(text: str) -> bool:
