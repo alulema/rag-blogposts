@@ -711,3 +711,44 @@ inferida.
 - Tests: `tests/test_clean.py` (tags extraídos, lowercased, fuera del cuerpo, ausentes sin
   romper) y `tests/test_overview.py` reescrito para tags (alfabético, dedupe case-insensitive,
   posts sin tags no aportan, fallback sin resumen si no hay tags). 53 tests + ruff limpios.
+
+---
+
+## 2026-08-19 — "No hay memoria": el bug real era el retrieval, no el historial
+
+**Reporte del dueño:** probando el chat a mano, los follow-ups ("¿y en Python?") se sienten sin
+memoria — pide agregar una ventana de contexto de ~5 turnos.
+
+**Diagnóstico:** el historial **ya existía** end-to-end y sin capar — `app.js` lo mantiene
+client-side y lo reenvía completo (`history[]`), `main.chat` lo pasa a `rag.build_messages`, que
+arma `system + historial + pregunta` para Ollama (esto es justo lo que dice `CLAUDE.md` §Flujo
+RAG). El bug no estaba ahí. Estaba en `Retriever.retrieve`: embebe **solo** la última pregunta,
+sin historial. Un follow-up dependiente de contexto por sí solo no trae señal suficiente para
+pasar `SIMILARITY_THRESHOLD=0.42`, así que `chunks` sale vacío — y `main.chat` rehúsa con el
+mensaje enlatado **sin llamar al LLM en absoluto**, ignorando que el historial sí traía el
+contexto necesario. De ahí la sensación de "no memoria": no es que el LLM lo olvide, es que el
+retrieval nunca le da la oportunidad de usarlo.
+
+**Fix (dos cambios independientes, cada uno resuelve una mitad del reporte):**
+1. **Ventana de contexto real** (lo que pidió el dueño): `app.js` acota `history[]` a las
+   últimas `MAX_HISTORY_TURNS=5` vueltas (`trimHistory()`, tras cada push). Antes crecía sin
+   límite durante toda la sesión — con sesiones de hasta ~20 min eso engordaba el prompt (y el
+   TTFT, ya ajustado con lupa en Perf II/III) sin necesidad real.
+2. **Retrieval retry con contexto** (el bug de fondo): `rag.contextualize_query(question,
+   history)` antepone el último turno de *usuario* del historial a la pregunta, solo para el
+   embed de retrieval — nunca se le manda así al LLM (`build_messages` sigue usando el
+   historial real, turno a turno). `main.chat` lo usa como **fallback**: si el retrieval con la
+   pregunta sola sale vacío y hay historial, reintenta una vez con la query contextualizada
+   antes de rehusar. El caso normal (primera pregunta, o pregunta ya autocontenida) no cambia —
+   sigue exactamente igual al `Retriever.retrieve(question)` de siempre, así que no debería
+   tocar la calibración de `SIMILARITY_THRESHOLD` para ese camino.
+- **Riesgo conocido, no cerrado:** el camino de fallback sí cambia el vector embebido (pregunta
+  anterior + actual concatenadas) frente al que se usó para calibrar el umbral
+  (`tools/calibrate_threshold.py`, preguntas sueltas). No se re-corrió la calibración con pares
+  concatenados — el fallback solo dispara cuando la pregunta sola ya fue rechazada, así que el
+  peor caso es "sigue rehusando" (no regresión), pero si en producción se ve que el fallback
+  nunca gana in situaciones donde debería, vale la pena calibrar aparte ese camino.
+- Tests: `tests/test_rag.py` (`contextualize_query`: antepone el turno de usuario más reciente,
+  salta roles que no son `user`, no cambia nada sin historial) y `tests/test_api.py`
+  (`_FakeContextualRetriever` — verifica que `main.chat` reintenta con la query contextualizada
+  y que, si tampoco encuentra nada, rehúsa igual sin loops). 61 tests + ruff limpios.

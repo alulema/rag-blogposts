@@ -32,6 +32,20 @@ class _FakeRetriever:
         return self._chunks
 
 
+class _FakeContextualRetriever:
+    """Solo devuelve chunks si la query trae el contexto del turno anterior (para probar el
+    fallback de retrieval en ``main.chat`` cuando la pregunta sola no alcanza el umbral)."""
+
+    def __init__(self, chunks, needle):
+        self._chunks = chunks
+        self._needle = needle
+        self.queries = []
+
+    def retrieve(self, query):
+        self.queries.append(query)
+        return self._chunks if self._needle in query else []
+
+
 class _FakeOllama:
     def __init__(self, tokens):
         self._tokens = tokens
@@ -73,6 +87,51 @@ def test_chat_grounded_refusal_without_context():
     assert "event: sources\ndata: []" in body  # sin citas
     assert "Solo " in body and "Alulema" in body  # rehúso en español (streamed por palabras)
     assert "should-not-be-used" not in body  # el LLM no se invoca sin contexto
+
+
+def test_chat_retries_retrieval_with_context_on_followup():
+    """Follow-up sin señal propia ("¿y en Python?"): reintenta con el turno anterior antes de
+    rehusar, en vez de cortar directo al mensaje enlatado."""
+    retriever = _FakeContextualRetriever([_CHUNK], needle="DDD")
+    app.dependency_overrides[get_retriever] = lambda: retriever
+    app.dependency_overrides[get_ollama] = lambda: _FakeOllama(["ok"])
+    client = TestClient(app)
+
+    r = client.post(
+        "/chat",
+        json={
+            "messages": [
+                {"role": "user", "content": "What is DDD?"},
+                {"role": "assistant", "content": "Domain-Driven Design is..."},
+                {"role": "user", "content": "and in Python?"},
+            ]
+        },
+    )
+    body = r.text
+    assert "https://alexisalulema.com/blog/x/" in body  # encontró la cita en el reintento
+    assert retriever.queries == ["and in Python?", "What is DDD? and in Python?"]
+
+
+def test_chat_refuses_followup_without_prior_context_match():
+    """Si ni siquiera el reintento con contexto encuentra chunks, rehúsa igual (sin loops)."""
+    retriever = _FakeContextualRetriever([], needle="nunca-matchea")
+    app.dependency_overrides[get_retriever] = lambda: retriever
+    app.dependency_overrides[get_ollama] = lambda: _FakeOllama(["should-not-be-used"])
+    client = TestClient(app)
+
+    r = client.post(
+        "/chat",
+        json={
+            "messages": [
+                {"role": "user", "content": "¿Quién ganó el mundial 2022?"},
+                {"role": "assistant", "content": "Solo puedo responder..."},
+                {"role": "user", "content": "¿y el de 2018?"},
+            ]
+        },
+    )
+    body = r.text
+    assert "Solo " in body and "Alulema" in body
+    assert "should-not-be-used" not in body
 
 
 def test_chat_rejects_non_user_last_message():

@@ -10,9 +10,21 @@ const sendBtn = document.getElementById("send");
 const themeToggle = document.getElementById("theme-toggle");
 const aboutDemoBtn = document.getElementById("about-demo-btn");
 
-/** Historial de la conversación: [{role, content}]. Se envía completo en cada turno. */
+/** Ventana de contexto: últimos MAX_HISTORY_TURNS intercambios (user+assistant) que se
+ * mandan al servidor. Acota el tamaño del prompt (y por tanto el TTFT en CPU) según la
+ * conversación crece; 5 vueltas es suficiente para follow-ups típicos sin dejar crecer el
+ * historial sin límite. */
+const MAX_HISTORY_TURNS = 5;
+
+/** Historial de la conversación: [{role, content}]. Se reenvía (acotado) en cada turno. */
 const history = [];
 let streaming = false;
+
+/** Recorta `history` a las últimas MAX_HISTORY_TURNS vueltas (2 mensajes por vuelta). */
+function trimHistory() {
+  const max = MAX_HISTORY_TURNS * 2;
+  if (history.length > max) history.splice(0, history.length - max);
+}
 
 // ── Utilidades ────────────────────────────────────────────────────────────
 function escapeHtml(text) {
@@ -126,6 +138,7 @@ async function sendMessage(text) {
 
   addUserMessage(question);
   history.push({ role: "user", content: question });
+  trimHistory();
 
   const { wrap, bubble } = addAssistantMessage();
   let answer = "";
@@ -184,6 +197,7 @@ async function sendMessage(text) {
     bubble.classList.remove("cursor");
     if (answer) {
       history.push({ role: "assistant", content: answer });
+      trimHistory();
     }
     if (!done && answer) {
       // Stream cortado antes del evento 'done' (teardown/expiración de sesión).

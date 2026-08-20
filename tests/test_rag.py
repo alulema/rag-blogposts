@@ -40,6 +40,30 @@ def test_build_messages_structure():
     assert msgs[-1] == {"role": "user", "content": "current q"}
 
 
+def test_contextualize_query_prepends_prior_user_turn():
+    history = [
+        {"role": "user", "content": "What is DDD?"},
+        {"role": "assistant", "content": "Domain-Driven Design is..."},
+    ]
+    assert rag.contextualize_query("and in Python?", history) == "What is DDD? and in Python?"
+
+
+def test_contextualize_query_skips_system_and_uses_most_recent_user_turn():
+    history = [
+        {"role": "user", "content": "older question"},
+        {"role": "assistant", "content": "older answer"},
+        {"role": "system", "content": "ignore"},
+        {"role": "user", "content": "latest question"},
+        {"role": "assistant", "content": "latest answer"},
+    ]
+    assert rag.contextualize_query("follow-up", history) == "latest question follow-up"
+
+
+def test_contextualize_query_without_prior_user_turn_returns_question_unchanged():
+    assert rag.contextualize_query("first question", []) == "first question"
+    assert rag.contextualize_query("q", [{"role": "assistant", "content": "a"}]) == "q"
+
+
 def test_citations_dedupe_by_url():
     chunks = [_c("u1", "T1"), _c("u1", "T1", score=0.6), _c("u2", "T2")]
     cites = rag.citations(chunks)
